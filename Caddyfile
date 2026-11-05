@@ -1,0 +1,26 @@
+# The canonical domain plus any aliases, so a move does not break old links.
+# MOLT_EXTRA_DOMAINS is optional and space-separated.
+{$MOLT_DOMAIN} {$MOLT_EXTRA_DOMAINS} {
+	encode zstd gzip
+
+	# One canonical host: www redirects to the apex.
+	@www host www.{$MOLT_DOMAIN}
+	redir @www https://{$MOLT_DOMAIN}{uri} permanent
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+		-Server
+	}
+
+	reverse_proxy api:8000 {
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	log {
+		output file /var/log/caddy/access.log
+		format json
+	}
+}

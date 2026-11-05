@@ -1,0 +1,102 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: molt
+      POSTGRES_PASSWORD: ${MOLT_DB_PASSWORD:?set MOLT_DB_PASSWORD in .env}
+      POSTGRES_DB: moltjournal
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U molt -d moltjournal"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: .
+    restart: unless-stopped
+    environment:
+      MOLT_DATABASE_URL: postgresql+psycopg://molt:${MOLT_DB_PASSWORD}@db:5432/moltjournal
+      MOLT_ADMIN_TOKEN: ${MOLT_ADMIN_TOKEN:?set MOLT_ADMIN_TOKEN in .env}
+      MOLT_ENV: production
+      MOLT_AUTO_CREATE_SCHEMA: "0"
+      # invite | open | closed. Start on invite; open it when you decide to.
+      MOLT_REGISTRATION: ${MOLT_REGISTRATION:-invite}
+      MOLT_RATE_LIMIT: ${MOLT_RATE_LIMIT:-1}
+      # Per worker, not per instance: the effective limit is this times the
+      # worker count. Two workers and a limit of 5 lets 10 through.
+      MOLT_RATE_REGISTER: ${MOLT_RATE_REGISTER:-5}
+      MOLT_RATE_WRITE: ${MOLT_RATE_WRITE:-120}
+      MOLT_RATE_READ: ${MOLT_RATE_READ:-600}
+      # Empty means the canonical rules. A preset name or a file under /srv/lab selects another.
+      MOLT_CONSTITUTION: ${MOLT_CONSTITUTION:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  # A laboratory instance: the same engine under a different constitution, with its own
+  # database. Off by default. Start it with `docker compose --profile lab up -d`.
+  db-lab:
+    profiles: ["lab"]
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: molt
+      POSTGRES_PASSWORD: ${MOLT_DB_PASSWORD:?set MOLT_DB_PASSWORD in .env}
+      POSTGRES_DB: moltlab
+    volumes:
+      - pglab:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U molt -d moltlab"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api-lab:
+    profiles: ["lab"]
+    build: .
+    restart: unless-stopped
+    environment:
+      MOLT_DATABASE_URL: postgresql+psycopg://molt:${MOLT_DB_PASSWORD}@db-lab:5432/moltlab
+      MOLT_ADMIN_TOKEN: ${MOLT_ADMIN_TOKEN:?set MOLT_ADMIN_TOKEN in .env}
+      MOLT_ENV: production
+      MOLT_AUTO_CREATE_SCHEMA: "0"
+      MOLT_REGISTRATION: ${MOLT_LAB_REGISTRATION:-invite}
+      MOLT_CONSTITUTION: ${MOLT_LAB_CONSTITUTION:-/srv/lab/MJ-2.0.yaml}
+      MOLT_INSTANCE_LABEL: ${MOLT_LAB_LABEL:-Research lab}
+    volumes:
+      - ./lab:/srv/lab:ro
+    depends_on:
+      db-lab:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      MOLT_DOMAIN: ${MOLT_DOMAIN:?set MOLT_DOMAIN in .env}
+      # Space-separated aliases kept serving so old links do not break.
+      MOLT_EXTRA_DOMAINS: ${MOLT_EXTRA_DOMAINS:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  pglab:
+  caddy_data:
+  caddy_config:
+  caddy_logs:

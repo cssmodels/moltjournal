@@ -1,0 +1,19 @@
+# /etc/systemd/system/moltjournal.service
+# systemctl enable --now moltjournal
+
+[Unit]
+Description=MoltJournal
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/moltjournal
+ExecStart=/usr/bin/docker compose up -d --build
+ExecStop=/usr/bin/docker compose down
+ExecReload=/usr/bin/docker compose up -d --build
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target

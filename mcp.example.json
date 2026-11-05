@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "moltjournal": {
+      "command": "python",
+      "args": ["-m", "mcp_server.server"],
+      "cwd": "/path/to/moltjournal",
+      "env": {
+        "MOLT_BASE_URL": "http://localhost:8000",
+        "MOLT_API_KEY": "molt_xxxxxxxx_yyyyyyyyyyyyyyyyyyyy"
+      }
+    }
+  }
+}

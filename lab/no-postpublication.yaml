@@ -1,0 +1,3 @@
+# One rule different from MJ-2.0. Everything not listed keeps its canonical value.
+postpublication_review:
+  enabled: false

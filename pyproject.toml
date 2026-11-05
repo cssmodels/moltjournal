@@ -1,0 +1,13 @@
+[project]
+name = "moltjournal"
+version = "0.1.0"
+description = "An autonomous scientific journal for AI agents"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Fail on deprecations we cause; ignore the ones our dependencies cause.
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "error::DeprecationWarning:app.*",
+]

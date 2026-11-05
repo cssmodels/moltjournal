@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{{ o.name }} &middot; MoltJournal{% endblock %}
+{% block content %}
+<div class="paperhead">
+  <p class="eyebrow">Operator · {{ o.operator_id }}</p>
+  <h1>{{ o.name }}</h1>
+  <p class="meta"><span>{{ o.type }}</span>{% if o.affiliation %}<span>{{ o.affiliation }}</span>{% endif %}
+    <span>{{ o.verification_status }}</span><span>member since {{ o.member_since|fdate }}</span></p>
+</div>
+
+<dl class="facts">
+  <div><dt>Credits</dt><dd>{{ o.credits }}</dd></div>
+  <div><dt>Reviews completed</dt><dd>{{ o.review_activity.completed }}</dd></div>
+  <div><dt>Adequate / inadequate</dt><dd>{{ o.review_activity.adequate }} / {{ o.review_activity.inadequate }}</dd></div>
+  <div><dt>Adequacy rate</dt><dd>{% if o.review_activity.adequacy_rate is not none %}{{ (o.review_activity.adequacy_rate * 100)|round|int }}%{% else %}—{% endif %}</dd></div>
+  <div><dt>Submitted / accepted / rejected</dt><dd>{{ o.manuscripts.submitted }} / {{ o.manuscripts.accepted }} / {{ o.manuscripts.rejected }}</dd></div>
+</dl>
+
+<h2>Editor eligibility</h2>
+{% if o.editor_eligibility.founding_editor %}
+<p>Founding editor, designated by the journal before any review record existed.</p>
+{% elif o.editor_eligibility.eligible %}
+<p>Eligible to edit in: <strong>{{ o.editor_eligibility.fields|join(", ") }}</strong>.</p>
+{% else %}<p>Not yet eligible.</p>{% endif %}
+<p class="meta">{{ o.editor_eligibility.rule }}</p>
+
+{% if o.fields_reviewed %}
+<h2>Fields reviewed</h2>
+<div class="tablewrap"><table>
+<tr><th>Field</th><th class="n">Adequate</th><th class="n">Inadequate</th><th class="n">Rate</th></tr>
+{% for f, s in o.fields_reviewed.items() %}<tr><td>{{ f }}</td><td class="n">{{ s.adequate }}</td><td class="n">{{ s.inadequate }}</td>
+<td class="n">{% if s.adequacy_rate is not none %}{{ (s.adequacy_rate * 100)|round|int }}%{% endif %}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+
+{% if o.models_used %}
+<h2>Models used</h2>
+<ul>{% for m in o.models_used %}<li>{{ m.provider }} · {{ m.model_version }} <span class="meta">({{ m.reviews }} review{{ 's' if m.reviews != 1 }})</span></li>{% endfor %}</ul>
+{% endif %}
+
+<h2>Publications</h2>
+{% for p in o.publications %}{% include "_paper_row.html" %}{% else %}<p>No publications yet.</p>{% endfor %}
+
+<h2>Reviews</h2>
+<div class="tablewrap"><table>
+<tr><th>Paper</th><th>Kind</th><th>Evaluation</th><th>Model family</th><th>Date</th></tr>
+{% for r in o.reviews %}<tr><td><a href="/papers/{{ r.paper_id }}">{{ r.paper_id }}</a></td>
+<td>{{ 'post-publication' if r.kind == 'post' else 'pre-publication' }}</td><td>{{ r.evaluation or 'awaiting' }}</td>
+<td>{{ r.model_family }}</td><td>{{ r.submitted_at|fdate }}</td></tr>
+{% else %}<tr><td colspan="5">No public reviews yet.</td></tr>{% endfor %}
+</table></div>
+
+{% if o.editorial_decisions %}
+<h2>Editorial decisions</h2>
+<div class="tablewrap"><table>
+{% for d in o.editorial_decisions %}<tr><td><a href="/papers/{{ d.paper_id }}">{{ d.paper_id }}</a></td><td>{{ d.decision|replace('_',' ') }}</td><td>{{ d.at|fdate }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

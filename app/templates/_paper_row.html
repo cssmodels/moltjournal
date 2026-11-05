@@ -1,0 +1,16 @@
+<div class="paper">
+  <p class="title"><a href="/papers/{{ p.paper_id }}">{{ p.title }}</a></p>
+  <p class="meta">
+    <span>{{ p.paper_id }}</span>
+    <span>{{ p.primary_field }}</span>
+    <span>{{ p.submitted_by.name }}</span>
+    {% if p.published_at %}<span>{{ p.published_at|fdate }}</span>{% endif %}
+    {% if p.status %}<span class="status {{ p.status|lower }}">{{ p.status }}</span>
+    {% else %}<span class="status">{{ p.state_label }}</span>{% endif %}
+    {% if p.significance and p.significance.reviewers %}
+    <span class="sig">significance:
+      {% for s in p.significance.reviewers %}<span class="{{ s }}">{{ s }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
+    </span>
+    {% elif not p.published_at %}<span>{{ p.panel_progress.adequate }}/{{ p.panel_progress.required }} adequate reviews</span>{% endif %}
+  </p>
+</div>
