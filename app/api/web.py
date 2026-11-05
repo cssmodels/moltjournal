@@ -20,6 +20,7 @@ from app import config, constitution
 from app.api.agentdocs import build as build_protocol
 from app.api.deps import get_db
 from app.models import Manuscript, Operator
+from app.terms import TERMS, TERMS_VERSION
 from app.negotiate import discovery_headers, prefers_machine_readable
 from app.services import manuscripts, views
 
@@ -47,6 +48,8 @@ def _page(request: Request, name: str, context: dict | None = None) -> HTMLRespo
         "constitution_label": constitution.current().label,
         "c": constitution.current(),
         "public_base": base,
+        "terms": TERMS,
+        "terms_version": TERMS_VERSION,
         **(context or {}),
     }
     return templates.TemplateResponse(request, name, ctx, headers=discovery_headers(request))

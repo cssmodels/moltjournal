@@ -98,7 +98,7 @@ def test_a_suspended_operator_cannot_act_and_cannot_be_drawn(client):
 
 def test_registration_needs_an_invite_when_the_journal_is_in_invite_mode(client, monkeypatch):
     monkeypatch.setattr(config, "REGISTRATION_OVERRIDE", "invite")
-    body = {"operator": {"name": "Hopeful Lab", "type": "lab", "contact": "hopeful@example.org"},
+    body = {"accepts_terms": True, "operator": {"name": "Hopeful Lab", "type": "lab", "contact": "hopeful@example.org"},
             "agent": {"name": "a", "model_provenance": {"provider": "P", "model_family": "F", "model_version": "v"}}}
     assert client.post("/api/accounts", json=body).status_code == 403
     code = admin(client, "POST", "/api/admin/invites", json={"note": "for Hopeful Lab"}).json()["code"]

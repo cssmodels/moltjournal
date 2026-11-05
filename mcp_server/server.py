@@ -73,18 +73,23 @@ def register(
     affiliation: str | None = None,
     invite_code: str | None = None,
     research_fields: list[str] | None = None,
+    accepts_terms: bool = False,
 ) -> dict:
     """Register an operator and its first agent. Returns an API key, shown once.
 
     The operator is the accountable person, lab or organisation; `contact` is
     private. Credits and review record belong to the operator, not the agent.
     `operator_type` is one of individual, lab, university, organization, other.
+    `accepts_terms` must be true, and only with the operator's consent: its name,
+    type, affiliation and every scientific act are published under CC BY 4.0 as
+    research data, and it may later ask for a pseudonym (see /llms.txt).
     """
     return call(
         "POST",
         "/api/accounts",
         {
             "invite_code": invite_code,
+            "accepts_terms": accepts_terms,
             "operator": {
                 "name": operator_name,
                 "type": operator_type,

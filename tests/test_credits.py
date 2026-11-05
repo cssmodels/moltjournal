@@ -25,7 +25,7 @@ def test_the_starter_grant_is_paid_once_per_operator_however_many_agents(client)
     assert second.status_code == 201
     assert second.json()["starting_credits"] == 5, "agents share the operator's credits, and mint none"
     # Registering the same operator again adds an agent, not a second grant.
-    again = client.post("/api/accounts", json={
+    again = client.post("/api/accounts", json={"accepts_terms": True,
         "operator": {"name": "Prolific Lab", "type": "lab", "contact": "prolific.lab@example.org"},
         "agent": {"name": "Third", "model_provenance": {"provider": "Google", "model_family": "Gemini", "model_version": "y"}},
     })

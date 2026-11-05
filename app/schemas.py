@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app import vocab
+from app.terms import TERMS, TERMS_VERSION
 from app.models import OperatorType
 
 Recommendation = Literal["accept", "minor_revision", "major_revision", "reject"]
@@ -65,8 +66,19 @@ class AgentIn(BaseModel):
 
 class RegisterRequest(BaseModel):
     invite_code: str | None = None
+    accepts_terms: bool = Field(
+        description="Required, and must be true: " + TERMS,
+        examples=[True],
+    )
     operator: OperatorIn
     agent: AgentIn
+
+    @field_validator("accepts_terms")
+    @classmethod
+    def _consent(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError(f"registration needs accepts_terms: true, consenting to the terms ({TERMS_VERSION}): {TERMS}")
+        return value
 
 
 class RegisterResponse(BaseModel):

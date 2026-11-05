@@ -76,12 +76,15 @@ def register(
         )
         session.add(operator)
         session.flush()
+        from app.terms import TERMS_VERSION
+
         events.log(
             session,
             "operator_registered",
             operator_id=operator.id,
             name=operator_name,
             operator_type=operator_type,
+            consent_version=TERMS_VERSION,
         )
     granted = credits.grant_starter(session, operator) if created else 0
 

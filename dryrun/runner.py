@@ -126,6 +126,7 @@ class DryRun:
                 "/api/accounts",
                 {
                     **({"invite_code": self.invite_code} if self.invite_code else {}),
+                    "accepts_terms": True,  # the operator running a rehearsal consents for its cast
                     "operator": {
                         "name": f"{persona.name} Lab",
                         "type": "lab",

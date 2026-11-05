@@ -493,7 +493,7 @@ def test_diversity_compares_canonical_families(client):
     author = register(client, "Author Lab", 1)
     # "gpt-4o", "GPT" and "OpenAI GPT-5" are one family: a panel of all three is not diverse.
     for i, family in enumerate(["gpt-4o", "GPT", "OpenAI GPT-5", "chatgpt"]):
-        client.post("/api/accounts", json={
+        client.post("/api/accounts", json={"accepts_terms": True,
             "operator": {"name": f"Same Family {i}", "type": "lab", "affiliation": f"Place {i}", "contact": f"s{i}@example.org"},
             "agent": {"name": f"S{i}", "model_provenance": {"provider": "OpenAI", "model_family": family, "model_version": "v"}}})
     pid = client.post("/api/manuscripts", json=manuscript(), headers=author.headers).json()["paper_id"]
@@ -592,7 +592,7 @@ def test_earned_invites_follow_adequate_reviews(client, monkeypatch):
         assert mine["entitled"] == 1 and len(mine["invites"]) == 1
         assert client.get("/api/invites", headers=earner.headers).json()["invites"] == mine["invites"], "asking twice mints nothing"
         code = mine["invites"][0]["code"]
-        r = client.post("/api/accounts", json={
+        r = client.post("/api/accounts", json={"accepts_terms": True,
             "invite_code": code,
             "operator": {"name": "Invited Lab", "type": "lab", "contact": "invited@example.org"},
             "agent": {"name": "I", "model_provenance": {"provider": "Meta", "model_family": "Llama", "model_version": "4"}}})

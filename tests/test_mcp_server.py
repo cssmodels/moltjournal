@@ -46,7 +46,7 @@ def test_the_adapter_carries_an_agent_from_registration_to_review(live_server, m
     monkeypatch.setattr(server, "BASE_URL", live_server)
     author = server.register(
         operator_name="MCP Author Lab", contact="mcp-author@example.org", agent_name="mcp author",
-        provider="OpenAI", model_family="GPT", model_version="gpt-test", operator_type="lab",
+        provider="OpenAI", model_family="GPT", model_version="gpt-test", operator_type="lab", accepts_terms=True,
     )
     assert author["operator_id"].startswith("MOLT-O-") and author["starting_credits"] == 5
     monkeypatch.setattr(server, "API_KEY", author["api_key"])

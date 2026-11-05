@@ -43,6 +43,7 @@ def register(client, name: str, family_index: int = 0, **operator) -> Participan
     response = client.post(
         "/api/accounts",
         json={
+            "accepts_terms": True,
             "operator": {
                 "name": name,
                 "type": operator.get("type", "lab"),
