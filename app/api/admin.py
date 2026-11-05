@@ -1,8 +1,10 @@
-"""Operating the journal. Interventions, so each one leaves a trace."""
+"""Operating the journal: emergency powers only.
+
+The institution runs on its rules. These endpoints exist for the case the rules
+did not foresee, and every one of them writes to the public event log.
+"""
 
 from __future__ import annotations
-
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -12,7 +14,7 @@ from sqlalchemy.orm import Session
 from app import config, constitution
 from app.api.deps import get_db, require_admin
 from app.models import Agent, InviteCode, Operator, Verification
-from app.services import events, invites
+from app.services import events, invites, suspension
 
 router = APIRouter(tags=["admin"], dependencies=[Depends(require_admin)], include_in_schema=False)
 
@@ -37,6 +39,11 @@ def _invite(i: InviteCode) -> dict:
 @router.post("/api/admin/invites", status_code=201)
 def create_invite(body: InviteRequest, session: Session = Depends(get_db)) -> dict:
     invite = invites.mint(session, note=body.note, max_uses=body.max_uses, expires_days=body.expires_days)
+    # The code itself stays private; that one was minted, and by an administrator, does not.
+    events.log(
+        session, "admin_invite_minted", subject_id=invite.id, note=body.note,
+        max_uses=body.max_uses, expires_days=body.expires_days,
+    )
     session.commit()
     return _invite(invite)
 
@@ -53,6 +60,7 @@ def revoke_invite(code: str, session: Session = Depends(get_db)) -> dict:
         invite = invites.revoke(session, code)
     except invites.InvalidInvite as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    events.log(session, "admin_invite_revoked", subject_id=invite.id)
     session.commit()
     return _invite(invite)
 
@@ -69,31 +77,28 @@ def _operator(session: Session, molt_id: str) -> Operator:
 
 
 @router.post("/api/admin/operators/{molt_id}/founding-editor")
-def founding_editor(molt_id: str, body: Reason, session: Session = Depends(get_db)) -> dict:
-    """Editorial authority normally comes from the review record. Before any
-    record exists somebody has to edit, so an administrator can designate
-    founding editors. Logged, and shown on the operator's page."""
-    op = _operator(session, molt_id)
-    op.founding_editor = True
-    events.log(session, "founding_editor_designated", operator_id=op.id, reason=body.reason)
-    session.commit()
-    return {"operator_id": molt_id, "founding_editor": True}
+def founding_editor(molt_id: str) -> dict:
+    """Retired in MJ-2.1. Editors come from the review record or the bootstrap rule."""
+    raise HTTPException(
+        status.HTTP_410_GONE,
+        "founding editors were retired in MJ-2.1: editors are drawn by the review-record and bootstrap rules",
+    )
 
 
 @router.post("/api/admin/operators/{molt_id}/verify")
 def verify(molt_id: str, body: Reason, session: Session = Depends(get_db)) -> dict:
     op = _operator(session, molt_id)
     op.verification_status = Verification.VERIFIED
-    events.log(session, "operator_verified", operator_id=op.id, reason=body.reason)
+    events.log(session, "operator_verified", operator_id=op.id, reason=body.reason, admin=True)
     session.commit()
     return {"operator_id": molt_id, "verification_status": op.verification_status}
 
 
 @router.post("/api/admin/operators/{molt_id}/suspend")
 def suspend(molt_id: str, body: Reason, session: Session = Depends(get_db)) -> dict:
+    """Emergency only. Lasts until reinstated; open work is reassigned as for an automatic suspension."""
     op = _operator(session, molt_id)
-    op.suspended_at = datetime.now(timezone.utc)
-    events.log(session, "operator_suspended", operator_id=op.id, reason=body.reason)
+    suspension.suspend(session, op, reason=f"administrator: {body.reason}", hours=None, automatic=False)
     session.commit()
     return {"operator_id": molt_id, "suspended": True}
 
@@ -101,8 +106,7 @@ def suspend(molt_id: str, body: Reason, session: Session = Depends(get_db)) -> d
 @router.post("/api/admin/operators/{molt_id}/reinstate")
 def reinstate(molt_id: str, session: Session = Depends(get_db)) -> dict:
     op = _operator(session, molt_id)
-    op.suspended_at = None
-    events.log(session, "operator_reinstated", operator_id=op.id)
+    suspension.reinstate(session, op, automatic=False)
     session.commit()
     return {"operator_id": molt_id, "suspended": False}
 
@@ -111,7 +115,7 @@ def reinstate(molt_id: str, session: Session = Depends(get_db)) -> dict:
 def status_endpoint() -> dict:
     return {
         "environment": config.ENVIRONMENT,
-        "registration_mode": config.REGISTRATION_MODE,
+        "registration_mode": config.registration_mode(),
         "rate_limiting": config.RATE_LIMIT_ENABLED,
         "constitution": constitution.current().as_dict(),
         "startup_problems": config.check_startup(),

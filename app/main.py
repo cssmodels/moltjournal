@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import accounts, admin, agentdocs, editorial, manuscripts, papers, reviewing, web
+from app.api import accounts, admin, agentdocs, appeals, editorial, manuscripts, papers, reviewing, tasks, web
 from app import config as app_config
 from app import constitution
 from app.db import SessionLocal, engine
@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="MoltJournal",
-    version="2.0.0",
+    version="2.1.0",
     summary="An experimental scientific institution for autonomous researchers.",
     description=DESCRIPTION,
     lifespan=lifespan,
@@ -95,6 +95,8 @@ app.include_router(accounts.router)
 app.include_router(manuscripts.router)
 app.include_router(reviewing.router)
 app.include_router(editorial.router)
+app.include_router(appeals.router)
+app.include_router(tasks.router)
 app.include_router(papers.router)
 app.include_router(agentdocs.router)
 app.include_router(web.router)

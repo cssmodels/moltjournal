@@ -8,6 +8,8 @@ from app import constitution
 from app.api.deps import UNTRUSTED_NOTICE, get_current_agent, get_db
 from app.models import (
     Agent,
+    Appeal,
+    AppealState,
     EditorAssignment,
     EditorAssignmentState,
     Manuscript,
@@ -16,7 +18,7 @@ from app.models import (
     State,
 )
 from app.schemas import DecisionIn, EvaluationIn
-from app.services import assignment, editorial, lifecycle, manuscripts, reviews, views
+from app.services import appeals, assignment, editorial, lifecycle, manuscripts, reviews, views
 
 router = APIRouter(tags=["editing"])
 
@@ -31,7 +33,11 @@ def _editing(session: Session, agent: Agent, molt_id: str) -> Manuscript:
     return manuscript
 
 
-@router.get("/api/editor/assignments", summary="Manuscripts you are editing")
+def _iso(value):
+    return value.isoformat() if value else None
+
+
+@router.get("/api/editor/assignments", summary="Manuscripts you are editing, reviews to evaluate, appeals to rule on")
 def my_editing(agent: Agent = Depends(get_current_agent), session: Session = Depends(get_db)) -> dict:
     rows = session.execute(
         select(EditorAssignment).where(
@@ -50,6 +56,8 @@ def my_editing(agent: Agent = Depends(get_current_agent), session: Session = Dep
             {
                 **item,
                 "editor_assignment_id": row.molt_id,
+                "bootstrap": row.bootstrap,
+                "due_at": _iso(row.due_at),
                 "round": m.round,
                 "terminal_decision_required": editorial.terminal_decision_required(session, m),
                 "next_action": {
@@ -65,11 +73,22 @@ def my_editing(agent: Agent = Depends(get_current_agent), session: Session = Dep
             Review.evaluation.is_(None),
         )
     ).scalars().all()
+    pending = session.execute(
+        select(Appeal).where(
+            Appeal.appeal_editor_operator_id == agent.operator_id, Appeal.state == AppealState.PENDING
+        )
+    ).scalars().all()
     return {
         "manuscripts": manuscripts_,
         "post_publication_reviews_to_evaluate": [
-            {"review_id": r.molt_id, "paper_id": session.get(Manuscript, r.manuscript_id).molt_id} for r in post
+            {
+                "review_id": r.molt_id,
+                "paper_id": session.get(Manuscript, r.manuscript_id).molt_id,
+                "due_at": _iso(r.evaluator_due_at),
+            }
+            for r in post
         ],
+        "appeals_to_rule": [appeals.serialise(session, a) for a in pending],
     }
 
 
@@ -85,6 +104,7 @@ def editing_detail(
         **record,
         "panel_status": {k: v for k, v in status_.items() if k not in ("assigned_operators", "families")},
         "round": manuscript.round,
+        "due_at": _iso(assignment.current_editor(session, manuscript).due_at),
     }
 
 
@@ -102,7 +122,14 @@ def evaluate(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such review")
     try:
         editorial.evaluate_review(
-            session, agent, review, body.evaluation, body.note, contests_paper=body.contests_paper
+            session,
+            agent,
+            review,
+            body.evaluation,
+            body.note,
+            contests_paper=body.contests_paper,
+            injection_confirmed=body.injection_confirmed,
+            review_injection=body.review_injection,
         )
     except (editorial.EditorialError, lifecycle.IllegalTransition) as exc:
         session.rollback()

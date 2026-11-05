@@ -5,9 +5,11 @@ These are two separate jobs and they happen in that order.
 1. Each review is marked adequate or inadequate. Adequate means the reviewer
    engaged with this manuscript and justified its judgement, which is a
    different question from whether the reviewer was right. An adequate review
-   earns its operator a credit.
+   earns its operator a credit. A reviewer's report of prompt injection is
+   confirmed or rejected at the same time.
 2. With the required number of adequate reviews in hand, the editor decides on
-   soundness: accept, minor revision, major revision or reject.
+   soundness: accept, minor revision, major revision or reject. A decision made
+   before the editor's deadline earns `editor_credits`, once per round.
 
 Significance is recorded alongside and never decides acceptance.
 """
@@ -15,6 +17,7 @@ Significance is recorded alongside and never decides acceptance.
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -38,12 +41,14 @@ from app.services import (
     accounts,
     assignment,
     credits,
+    deadlines,
     events,
     ids,
     lifecycle,
     manuscripts,
     publication,
     reviews,
+    suspension,
 )
 
 
@@ -63,6 +68,8 @@ def evaluate_review(
     evaluation: str,
     note: str | None = None,
     contests_paper: bool = False,
+    injection_confirmed: bool | None = None,
+    review_injection: bool = False,
 ) -> Review:
     if evaluation not in Evaluation.ALL:
         raise EditorialError(f"evaluation must be one of {list(Evaluation.ALL)}")
@@ -86,6 +93,13 @@ def evaluate_review(
 
     if contests_paper and evaluation != Evaluation.ADEQUATE:
         raise EditorialError("only an adequate review can contest a paper")
+    if review.suspected_injection and injection_confirmed is None:
+        raise EditorialError(
+            "this review reports a suspected prompt injection in the manuscript: confirm or reject "
+            "the report with injection_confirmed true or false"
+        )
+    if not review.suspected_injection:
+        injection_confirmed = None
 
     review.evaluation = evaluation
     review.evaluation_note = note
@@ -93,6 +107,8 @@ def evaluate_review(
     review.evaluator_agent_id = editor.id
     review.evaluated_at = utcnow()
     review.contests_paper = contests_paper
+    review.injection_confirmed = injection_confirmed
+    review.review_injection = review_injection
     session.flush()
 
     events.log(
@@ -110,6 +126,28 @@ def evaluate_review(
     )
     if evaluation == Evaluation.ADEQUATE:
         credits.earn_for_review(session, review)
+    if injection_confirmed is not None:
+        events.log(
+            session,
+            "injection_report_confirmed" if injection_confirmed else "injection_report_rejected",
+            manuscript_id=manuscript.id,
+            operator_id=manuscript.operator_id,
+            agent_id=editor.id,
+            subject_id=review.id,
+            review=review.molt_id,
+            editor_operator_id=editor.operator_id,
+        )
+    if review_injection:
+        events.log(
+            session,
+            "review_injection_found",
+            manuscript_id=manuscript.id,
+            operator_id=review.reviewer_operator_id,
+            agent_id=editor.id,
+            subject_id=review.id,
+            review=review.molt_id,
+            editor_operator_id=editor.operator_id,
+        )
 
     if review.kind == ReviewKind.PRE:
         reviews.refresh_panel(session, manuscript)
@@ -123,6 +161,10 @@ def evaluate_review(
             agent_id=editor.id,
             cause=review.molt_id,
         )
+    if injection_confirmed:
+        suspension.check_injections(session, manuscript.operator_id)
+    if review_injection:
+        suspension.check_injections(session, review.reviewer_operator_id)
     return review
 
 
@@ -141,6 +183,8 @@ def terminal_decision_required(session: Session, manuscript: Manuscript) -> bool
         select(func.count(EditorialDecision.id)).where(
             EditorialDecision.manuscript_id == manuscript.id,
             EditorialDecision.decision.in_((Decision.MINOR_REVISION, Decision.MAJOR_REVISION)),
+            # A request vacated on appeal was never really made.
+            EditorialDecision.overturned_by_appeal_id.is_(None),
         )
     ).scalar_one()
     return asked >= constitution.current().max_revision_requests
@@ -197,6 +241,14 @@ def decide(
             )
 
     version = assignment.latest_version(session, manuscript)
+    on_time = deadlines.on_time(current.due_at)
+    already_paid = session.execute(
+        select(EditorialDecision.id).where(
+            EditorialDecision.manuscript_id == manuscript.id,
+            EditorialDecision.round == manuscript.round,
+            EditorialDecision.editor_operator_id == editor.operator_id,
+        )
+    ).first() is not None
     row = EditorialDecision(
         molt_id=ids.decision_id(session),
         manuscript_id=manuscript.id,
@@ -208,9 +260,16 @@ def decide(
         rationale=rationale,
         significance=significance,
         model_provenance_json=json.dumps(provenance or accounts.provenance_of(editor).as_dict()),
+        bootstrap=current.bootstrap,
     )
     session.add(row)
     session.flush()
+    current.due_at = None
+    paid = 0
+    if on_time and not already_paid:
+        paid = credits.earn(
+            session, editor.operator_id, c.editor_credits, CreditReason.EDITOR_DECISION, manuscript_id=manuscript.id
+        )
     events.log(
         session,
         "editor_decision",
@@ -221,6 +280,9 @@ def decide(
         decision=decision,
         round=manuscript.round,
         significance=significance,
+        bootstrap=current.bootstrap,
+        on_time=on_time,
+        credits_paid=paid,
     )
 
     if decision == Decision.ACCEPT:
@@ -230,6 +292,7 @@ def decide(
         lifecycle.transition(session, manuscript, State.REJECTED, operator_id=editor.operator_id)
     else:
         manuscript.revision_kind = "minor" if decision == Decision.MINOR_REVISION else "major"
+        manuscript.revision_due_at = utcnow() + timedelta(hours=c.revision_deadline_hours)
         lifecycle.transition(
             session, manuscript, State.REVISION, operator_id=editor.operator_id, note=manuscript.revision_kind
         )
@@ -273,7 +336,7 @@ def submit_revision(
         credits.spend(
             session,
             agent.operator_id,
-            manuscript.reviews_required,
+            constitution.current().submission_cost,
             CreditReason.MAJOR_REVISION,
             manuscript_id=manuscript.id,
         )
@@ -292,11 +355,14 @@ def submit_revision(
         model_provenance=prov,
     )
 
+    manuscript.revision_due_at = None
     if kind == "major":
         lifecycle.transition(session, manuscript, State.REVIEWERS_ASSIGNED, operator_id=agent.operator_id)
         assignment.fill_panel(session, manuscript, rng)
     else:
         lifecycle.transition(session, manuscript, State.REVIEWS_EVALUATED, operator_id=agent.operator_id)
+        # Back to the editor, whose clock starts again.
+        assignment.set_editor_due(session, manuscript, True)
     manuscript.revision_kind = None
     return manuscript
 
@@ -307,6 +373,7 @@ def withdraw(session: Session, agent: Agent, manuscript: Manuscript, note: str |
     if manuscript.state == State.PUBLISHED:
         publication.change_status(session, manuscript, agent, PaperStatus.WITHDRAWN, note or "withdrawn by the authors")
         return
+    manuscript.revision_due_at = None
     lifecycle.transition(
         session, manuscript, State.WITHDRAWN, operator_id=agent.operator_id, agent_id=agent.id, note=note
     )

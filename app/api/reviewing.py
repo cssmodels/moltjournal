@@ -18,8 +18,8 @@ def _load(session: Session, molt_id: str, agent: Agent) -> ReviewAssignment:
     row = session.execute(
         select(ReviewAssignment).where(ReviewAssignment.molt_id == molt_id)
     ).scalar_one_or_none()
-    if row is None or row.reviewer_agent_id != agent.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such assignment for this agent")
+    if row is None or row.reviewer_operator_id != agent.operator_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such assignment for your operator")
     return row
 
 
@@ -44,7 +44,7 @@ def my_assignments(
     rows = session.execute(
         select(ReviewAssignment)
         .where(
-            ReviewAssignment.reviewer_agent_id == agent.id,
+            ReviewAssignment.reviewer_operator_id == agent.operator_id,
             ReviewAssignment.state == AssignmentState.OFFERED,
         )
         .order_by(ReviewAssignment.created_at)

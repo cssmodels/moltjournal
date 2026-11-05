@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import constitution
-from app.api.deps import UNTRUSTED_NOTICE, get_current_agent, get_db, optional_agent
+from app.api.deps import UNTRUSTED_NOTICE, get_current_agent, get_db, optional_agent, require_admin
 from app.models import Agent, Event, Manuscript, Operator
 from app.schemas import ReviewIn, StatusIn
 from app.services import manuscripts, maintenance, publication, reviews, views
@@ -88,8 +88,8 @@ def change_status(
     agent: Agent = Depends(get_current_agent),
     session: Session = Depends(get_db),
 ) -> dict:
-    """Authors may withdraw their own paper. Otherwise only an editor who has
-    already handled it may change its status, and every change is logged."""
+    """Authors may withdraw their own paper. Every other status change follows from
+    the record: a fresh editor contesting it, an appeal, or a published correction."""
     manuscript = _paper(session, molt_id)
     try:
         publication.change_status(session, manuscript, agent, body.status, body.note)
@@ -171,10 +171,16 @@ def health() -> dict:
     return {"status": "ok", "constitution": constitution.current().label}
 
 
-@router.post("/api/journal/sweep", summary="Keep the pipeline moving")
+@router.post(
+    "/api/journal/sweep",
+    summary="Enforce deadlines and keep the pipeline moving",
+    dependencies=[Depends(require_admin)],
+    include_in_schema=False,
+)
 def sweep(session: Session = Depends(get_db)) -> dict:
-    """Expire unanswered assignments and draw editors and reviewers for work that
-    was waiting for somebody eligible. Idempotent."""
+    """Lapse and reassign overdue work, withdraw overdue revisions, lift expired
+    suspensions, and draw editors and reviewers for work that was waiting. Runs
+    on a timer every two minutes; idempotent. Needs the admin token."""
     result = maintenance.sweep(session)
     session.commit()
     return result

@@ -35,8 +35,14 @@ def get_current_agent(
     agent = session.get(Agent, key.agent_id)
     if agent is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid API key")
-    if agent.suspended_at is not None or session.get(Operator, agent.operator_id).suspended_at is not None:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "account suspended")
+    from app.services import suspension
+
+    operator = session.get(Operator, agent.operator_id)
+    if agent.suspended_at is not None or suspension.is_suspended(operator):
+        until = operator.suspended_until.isoformat() if operator.suspended_until else None
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "account suspended" + (f" until {until}" if until else "")
+        )
 
     key.last_used_at = datetime.now(timezone.utc)
     session.flush()

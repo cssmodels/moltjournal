@@ -82,6 +82,9 @@ def _store(
         model_provenance_json=json.dumps(provenance),
         model_family=accounts.normalise_family(provenance["model_family"]),
         content_sha256=digest,
+        competing_interests=payload.get("competing_interests"),
+        suspected_injection=bool(payload.get("suspected_injection")),
+        injection_note=payload.get("injection_note"),
     )
     session.add(review)
     session.flush()
@@ -97,6 +100,7 @@ def _store(
         model_provenance=provenance,
         soundness=review.soundness_recommendation,
         significance=review.significance,
+        suspected_injection=review.suspected_injection,
     )
     return review
 
@@ -124,8 +128,8 @@ def submit_review(
     session: Session, agent: Agent, assignment_row: ReviewAssignment, payload: dict
 ) -> Review:
     manuscript = session.get(Manuscript, assignment_row.manuscript_id)
-    if assignment_row.reviewer_agent_id != agent.id:
-        raise ReviewError("this assignment belongs to another agent")
+    if assignment_row.reviewer_operator_id != agent.operator_id:
+        raise ReviewError("this assignment belongs to another operator")
     if assignment_row.state != AssignmentState.OFFERED:
         raise ReviewError(f"this assignment is {assignment_row.state.lower()}")
     if manuscript.state != State.REVIEWERS_ASSIGNED or assignment_row.round != manuscript.round:
@@ -152,8 +156,8 @@ def submit_review(
 
 
 def decline_assignment(session: Session, agent: Agent, assignment_row: ReviewAssignment) -> None:
-    if assignment_row.reviewer_agent_id != agent.id:
-        raise ReviewError("this assignment belongs to another agent")
+    if assignment_row.reviewer_operator_id != agent.operator_id:
+        raise ReviewError("this assignment belongs to another operator")
     if assignment_row.state != AssignmentState.OFFERED:
         raise ReviewError(f"this assignment is {assignment_row.state.lower()}")
     assignment_row.state = AssignmentState.DECLINED
@@ -182,6 +186,8 @@ def refresh_panel(session: Session, manuscript: Manuscript) -> None:
     if state == State.REVIEWERS_ASSIGNED:
         if status["outstanding"] == 0 and status["adequate"] + status["awaiting_evaluation"] >= status["required"]:
             lifecycle.transition(session, manuscript, State.REVIEWS_SUBMITTED)
+            # The editor's clock starts when the panel is complete.
+            assignment.set_editor_due(session, manuscript, True)
             if manuscript.panel_opened_round < manuscript.round:
                 manuscript.panel_opened_round = manuscript.round
                 events.log(session, "panel_opened", manuscript_id=manuscript.id, round=manuscript.round)
@@ -195,6 +201,7 @@ def refresh_panel(session: Session, manuscript: Manuscript) -> None:
             lifecycle.transition(
                 session, manuscript, State.REVIEWERS_ASSIGNED, note="replacement reviewer needed"
             )
+            assignment.set_editor_due(session, manuscript, False)
             assignment.fill_panel(session, manuscript)
 
 
@@ -274,7 +281,12 @@ def serialise(session: Session, review: Review) -> dict:
         "significance_explanation": review.significance_explanation,
         "evaluation": review.evaluation,
         "evaluation_note": review.evaluation_note,
+        "evaluation_overturned_on_appeal": review.overturned_by_appeal_id is not None,
         "contests_paper": review.contests_paper,
+        "competing_interests": review.competing_interests,
+        "suspected_injection": review.suspected_injection,
+        "injection_note": review.injection_note,
+        "injection_confirmed": review.injection_confirmed,
         "submitted_at": review.submitted_at.isoformat(),
     }
 
@@ -339,15 +351,19 @@ def submit_post_publication_review(
     return review
 
 
-def assign_evaluator(session: Session, review: Review) -> bool:
+def assign_evaluator(session: Session, review: Review, exclude: set[str] | None = None) -> bool:
+    """Draw a fresh editor to evaluate a post-publication review, on the editor's deadline."""
+    from datetime import timedelta
+
     if review.evaluator_agent_id is not None:
         return True
     manuscript = session.get(Manuscript, review.manuscript_id)
-    editor = assignment.pick_evaluator(session, manuscript, review.reviewer_operator_id)
+    editor, tier = assignment.pick_evaluator(session, manuscript, review.reviewer_operator_id, exclude=exclude)
     if editor is None:
         return False
     review.evaluator_agent_id = editor.id
     review.evaluator_operator_id = editor.operator_id
+    review.evaluator_due_at = utcnow() + timedelta(hours=constitution.current().editor_deadline_hours)
     session.flush()
     events.log(
         session,
@@ -357,5 +373,7 @@ def assign_evaluator(session: Session, review: Review) -> bool:
         agent_id=editor.id,
         subject_id=review.id,
         review=review.molt_id,
+        mode=tier,
+        bootstrap=tier in assignment.Tier.BOOTSTRAP_TIERS,
     )
     return True

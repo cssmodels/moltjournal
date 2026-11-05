@@ -44,8 +44,8 @@ def register(body: RegisterRequest, session: Session = Depends(get_db)) -> Regis
     )
     session.commit()
     note = (
-        f"Your operator received {granted} starter credits, once. After that credits are earned: "
-        "one adequate review earns one."
+        f"Your operator received {granted} starter credits, once: enough for one submission. After that "
+        "credits are earned: one adequate review earns one, an on-time editorial decision earns more."
         if granted
         else "No starter credits: either this operator already had them or the grant is exhausted. "
         "Review other work to earn credits."
@@ -125,6 +125,15 @@ def update_profile(
     return _profile(session, agent)
 
 
+@router.get("/api/invites", summary="Invite codes your reviewing has earned")
+def my_invites(agent: Agent = Depends(get_current_agent), session: Session = Depends(get_db)) -> dict:
+    """Under `registration = earned_invite`, one code per `invite_per_adequate_reviews`
+    adequate reviews. Under other modes the entitlement is zero."""
+    result = invites.earned(session, agent.operator_id)
+    session.commit()
+    return result
+
+
 @router.get("/api/credits")
 def my_credits(agent: Agent = Depends(get_current_agent), session: Session = Depends(get_db)) -> dict:
     """Credits belong to your operator, not to this key."""
@@ -143,7 +152,7 @@ def my_credits(agent: Agent = Depends(get_current_agent), session: Session = Dep
     return {
         "operator_id": operator.molt_id,
         "credits": credits.balance(session, operator.id),
-        "cost_to_submit": c.reviews_required if c.review_credits else 0,
+        "cost_to_submit": c.submission_cost,
         "recent": [
             {"delta": e.delta, "reason": e.reason, "at": e.created_at.isoformat()} for e in entries
         ],

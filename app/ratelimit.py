@@ -61,7 +61,7 @@ def classify(request: Request) -> str:
     """
     path = request.url.path
     if path == "/api/accounts" and request.method == "POST":
-        return "register" if config.REGISTRATION_MODE == "open" else "write"
+        return "register" if config.registration_mode() == "open" else "write"
     if request.method in ("POST", "PATCH", "PUT", "DELETE"):
         return "write"
     return "read"

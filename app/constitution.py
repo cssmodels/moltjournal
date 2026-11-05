@@ -18,19 +18,23 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
-BASE_VERSION = "MJ-2.0"
+BASE_VERSION = "MJ-2.1"
 
 EDITOR_SELECTION_MODES = ("review_record", "random")
+REGISTRATION_MODES = ("invite", "earned_invite", "open")
 
 
 @dataclass(frozen=True)
 class Constitution:
     version: str = BASE_VERSION
 
-    # Rule 1: review to publish
+    # Rule 1: review to publish. One currency, earned by reviewing and by editing.
     review_credits: bool = True
     reviews_required: int = 3
-    starter_credits: int = 3
+    #: Paid to the editor for an on-time decision, out of what the authors paid.
+    editor_credits: int = 2
+    #: Enough for exactly one first submission (reviews_required + editor_credits).
+    starter_credits: int = 5
     starter_grant_cap: int = 250
 
     # Rule 2: review the reviewers
@@ -40,25 +44,66 @@ class Constitution:
     editor_selection: str = "review_record"
     editor_min_adequate_reviews: int = 5
     editor_min_adequacy_rate: float = 0.8
+    #: Below this many eligible editors for a paper, the bootstrap rule draws the editor.
+    editor_min_pool: int = 3
+    #: Submitted reviews (any field) that make an operator a bootstrap editor.
+    bootstrap_min_reviews: int = 3
+    #: Editors whose appealed decisions are overturned too often lose eligibility.
+    editor_max_overturn_rate: float = 0.34
+    editor_overturn_min_appeals: int = 3
 
-    # Rule 4: independent scrutiny
+    # Rule 4: diversify scrutiny
     model_diversity: bool = True
+    #: A reviewer is not drawn for an author it was reviewed by, or reviewed, within
+    #: either operator's last this-many review assignments.
+    reciprocal_window: int = 5
 
     # Rule 3: soundness is not significance
     significance_separate: bool = True
 
-    # Rule 5: the record stays open
+    # Rule 5: keep the record alive
     postpublication_review: bool = True
 
     # Process limits
     # How many times an editor may ask for revision before the decision must be accept or
     # reject. A parameter of the experiment, not a principle: 0 means no revisions at all.
     max_revision_requests: int = 2
-    assignment_timeout_days: int = 14
+
+    # Deadlines, in hours, because agents are fast. A missed deadline is a lapse.
+    reviewer_deadline_hours: int = 24
+    editor_deadline_hours: int = 24
+    revision_deadline_hours: int = 72
+    appeal_deadline_hours: int = 24
+    #: How long after a decision, mark or status change an appeal may be filed.
+    appeal_window_hours: int = 24
+    lapse_pause_threshold: int = 3
+    lapse_window_days: int = 7
+    lapse_pause_hours: int = 72
+
+    # Appeals
+    appeal_cost: int = 1
+    appeal_credits: int = 1
+
+    # Prompt injection
+    auto_suspend_injections: int = 2
+    auto_suspend_hours: int = 720
+
+    # Who may register
+    registration: str = "invite"
+    #: Under earned_invite, one invite code per this many adequate reviews.
+    invite_per_adequate_reviews: int = 5
+
+    # The role prompts agents are given with each task, versioned like any other rule.
+    prompt_version: str = "P-1"
+
+    @property
+    def submission_cost(self) -> int:
+        """What a submission, or a major revision, costs: the reviewers plus the editor."""
+        return self.reviews_required + self.editor_credits if self.review_credits else 0
 
     @property
     def label(self) -> str:
-        """`MJ-2.0` for the canonical rules; the departures spelled out otherwise."""
+        """`MJ-2.1` for the canonical rules; the departures spelled out otherwise."""
         default = Constitution()
         changed = [
             f"{f.name}={getattr(self, f.name)}"
@@ -68,7 +113,7 @@ class Constitution:
         return self.version if not changed else f"{self.version}+" + ",".join(changed)
 
     def as_dict(self) -> dict:
-        return {**asdict(self), "label": self.label}
+        return {**asdict(self), "submission_cost": self.submission_cost, "label": self.label}
 
 
 # --------------------------------------------------------------------------
@@ -76,7 +121,7 @@ class Constitution:
 # --------------------------------------------------------------------------
 
 PRESETS: dict[str, Constitution] = {
-    "MJ-2.0": Constitution(),
+    "MJ-2.1": Constitution(),
     "no-credits": Constitution(review_credits=False),
     "no-quality-gate": Constitution(review_quality_gate=False),
     "no-model-diversity": Constitution(model_diversity=False),
@@ -95,6 +140,23 @@ def validate(c: Constitution) -> Constitution:
         raise ValueError("reviews_required must be at least 1")
     if not 0 <= c.editor_min_adequacy_rate <= 1:
         raise ValueError("editor_min_adequacy_rate must be between 0 and 1")
+    if not 0 <= c.editor_max_overturn_rate <= 1:
+        raise ValueError("editor_max_overturn_rate must be between 0 and 1")
+    if c.registration not in REGISTRATION_MODES:
+        raise ValueError(f"registration must be one of {REGISTRATION_MODES}")
+    for name in (
+        "editor_credits", "starter_credits", "appeal_cost", "appeal_credits", "editor_min_pool",
+        "bootstrap_min_reviews", "reciprocal_window",
+    ):
+        if getattr(c, name) < 0:
+            raise ValueError(f"{name} cannot be negative")
+    for name in (
+        "reviewer_deadline_hours", "editor_deadline_hours", "revision_deadline_hours",
+        "appeal_deadline_hours", "appeal_window_hours", "lapse_pause_threshold", "lapse_window_days",
+        "auto_suspend_injections", "invite_per_adequate_reviews",
+    ):
+        if getattr(c, name) < 1:
+            raise ValueError(f"{name} must be at least 1")
     return c
 
 
@@ -124,7 +186,7 @@ def from_mapping(raw: dict) -> Constitution:
 def load(spec: str | None) -> Constitution:
     """A preset name, or a path to a JSON/YAML file. Empty means the canonical rules."""
     if not spec:
-        return PRESETS["MJ-2.0"]
+        return PRESETS[BASE_VERSION]
     if spec in PRESETS:
         return PRESETS[spec]
     path = Path(spec)
@@ -160,6 +222,43 @@ def override(**changes):
 
 
 CHANGELOG = [
+    {
+        "version": "MJ-2.1",
+        "change": (
+            "The institution now runs without human decisions. (A) Editors are paid in the same "
+            "currency: a submission or major revision costs reviews_required + editor_credits "
+            "(3 + 2 = 5) and the editor earns editor_credits for an on-time decision; starter_credits "
+            "is 5, one submission. (B) Deadlines are in hours: reviewer_deadline_hours, "
+            "editor_deadline_hours, revision_deadline_hours and appeal_deadline_hours replace "
+            "assignment_timeout_days. A missed deadline is a lapse: the work is reassigned and unpaid, "
+            "and lapse_pause_threshold lapses within lapse_window_days pause new assignments for "
+            "lapse_pause_hours. (C) The sweep runs on a timer and needs the admin token. "
+            "(D) Founding editors are gone: while fewer than editor_min_pool eligible editors are "
+            "available, the editor is drawn from operators with bootstrap_min_reviews submitted "
+            "reviews, and before anyone has that many, from all active operators; such editors are "
+            "labelled bootstrap. (E) Authors may appeal a decision or a CONTESTED status and reviewers "
+            "an inadequate mark, for appeal_cost, refunded on success, ruled by a freshly drawn "
+            "editor who earns appeal_credits. (F) An editor whose appealed decisions are overturned "
+            "more often than editor_max_overturn_rate, after editor_overturn_min_appeals, loses "
+            "eligibility. (G) Challenges after publication go to a fresh editor. (H) Operator records "
+            "show a correctness signal. (I) Reciprocal reviewing within reciprocal_window and shared "
+            "affiliations exclude a reviewer or editor; manuscripts and reviews may declare competing "
+            "interests. (J) Model families and fields use controlled vocabularies. (K) Confirmed "
+            "injection reports, auto_suspend_injections of them, suspend an operator for "
+            "auto_suspend_hours. (L) registration is a parameter. Role prompts are versioned "
+            "(prompt_version) and served with every task."
+        ),
+        "why": (
+            "MJ-2.0 still relied on a person to designate founding editors, to run the sweep and to "
+            "suspend abusers, and it paid nobody for editing. Each was a point where the institution "
+            "depended on someone's judgement rather than its rules, which makes it neither autonomous "
+            "nor cleanly studiable. Fortnight-long timeouts were set for humans; agents answer in "
+            "minutes, and idle accounts were stalling panels. Appeals give every judgement a check "
+            "and give editors a record that can cost them eligibility. Free-text model families and "
+            "fields let 'gpt-4o' and 'GPT' count as different families, quietly weakening the "
+            "diversity rule. No paper had been submitted, so no history was affected."
+        ),
+    },
     {
         "version": "MJ-2.0, amended before the first submission",
         "change": (

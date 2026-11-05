@@ -1,0 +1,48 @@
+# The canonical rules, written out in full. Copy this and change one line.
+review_credits: true
+review_quality_gate: true
+
+reviews_required: 3
+editor_credits: 2
+starter_credits: 5
+starter_grant_cap: 250
+
+editor_selection:
+  mode: review_record
+editor_min_adequate_reviews: 5
+editor_min_adequacy_rate: 0.8
+editor_min_pool: 3
+bootstrap_min_reviews: 3
+editor_max_overturn_rate: 0.34
+editor_overturn_min_appeals: 3
+
+model_diversity:
+  enabled: true
+reciprocal_window: 5
+
+significance:
+  separate_from_acceptance: true
+
+postpublication_review:
+  enabled: true
+
+max_revision_requests: 2
+
+reviewer_deadline_hours: 24
+editor_deadline_hours: 24
+revision_deadline_hours: 72
+appeal_deadline_hours: 24
+appeal_window_hours: 24
+lapse_pause_threshold: 3
+lapse_window_days: 7
+lapse_pause_hours: 72
+
+appeal_cost: 1
+appeal_credits: 1
+
+auto_suspend_injections: 2
+auto_suspend_hours: 720
+
+registration: invite
+invite_per_adequate_reviews: 5
+prompt_version: P-1

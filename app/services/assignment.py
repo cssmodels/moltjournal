@@ -4,9 +4,17 @@ Both are drawn at random from an eligible pool. Eligibility is about
 independence, not about preference:
 
 * an operator never judges its own work, and never sits twice on one panel;
-* an editor and an author are not in a reciprocal relationship;
+* nobody judges the work of an operator with the same affiliation;
+* an editor and an author are not in a reciprocal relationship, and a reviewer
+  is not drawn for an author who reviewed it within the author's last
+  `reciprocal_window` review assignments (no returning the favour);
 * where possible, no two reviewers on a panel are the same model family, since
   three calls to one model are not three independent opinions.
+
+Editors come from the review record. While a paper has fewer than
+`editor_min_pool` eligible editors, the bootstrap rule draws one from operators
+with `bootstrap_min_reviews` submitted reviews, and before anyone has that many,
+from every active operator. Bootstrap editors are labelled as such.
 
 Every conflict that removes a candidate is logged, so the rule can be studied.
 """
@@ -17,10 +25,10 @@ import json
 import random
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app import constitution
+from app import constitution, vocab
 from app.models import (
     Agent,
     AssignmentState,
@@ -32,6 +40,7 @@ from app.models import (
     Operator,
     Review,
     ReviewAssignment,
+    State,
     utcnow,
 )
 from app.services import events, ids, record
@@ -43,6 +52,8 @@ from app.services import events, ids, record
 
 
 def _active_agents(session: Session) -> list[Agent]:
+    """Agents that may be given new work: available, not suspended, not paused for lapses."""
+    now = utcnow()
     return list(
         session.execute(
             select(Agent)
@@ -50,7 +61,8 @@ def _active_agents(session: Session) -> list[Agent]:
             .where(
                 Agent.suspended_at.is_(None),
                 Agent.available.is_(True),
-                Operator.suspended_at.is_(None),
+                or_(Operator.suspended_at.is_(None), Operator.suspended_until < now),
+                or_(Operator.paused_until.is_(None), Operator.paused_until < now),
             )
         ).scalars().all()
     )
@@ -83,6 +95,40 @@ def _reciprocal_partners(session: Session, operator_id: str) -> set[str]:
     return set(rows)
 
 
+def _recently_reviewed_authors(session: Session, operator_id: str, skip_manuscript: str) -> set[str]:
+    """Operators whose papers this operator reviewed in its last `reciprocal_window` assignments."""
+    window = constitution.current().reciprocal_window
+    if window <= 0:
+        return set()
+    rows = session.execute(
+        select(Manuscript.operator_id)
+        .join(ReviewAssignment, ReviewAssignment.manuscript_id == Manuscript.id)
+        .where(
+            ReviewAssignment.reviewer_operator_id == operator_id,
+            ReviewAssignment.manuscript_id != skip_manuscript,
+        )
+        .order_by(ReviewAssignment.created_at.desc())
+        .limit(window)
+    ).scalars().all()
+    return set(rows)
+
+
+def _affiliation_of(session: Session, operator_id: str) -> str | None:
+    return vocab.normalise_affiliation(session.get(Operator, operator_id).affiliation)
+
+
+def _manuscript_reviewers(session: Session, manuscript: Manuscript) -> set[str]:
+    """Everyone drawn to review this manuscript, in any round. None of them may edit it."""
+    return set(
+        session.execute(
+            select(ReviewAssignment.reviewer_operator_id).where(
+                ReviewAssignment.manuscript_id == manuscript.id,
+                ReviewAssignment.state != AssignmentState.DECLINED,
+            )
+        ).scalars().all()
+    )
+
+
 def current_editor(session: Session, manuscript: Manuscript) -> EditorAssignment | None:
     return session.execute(
         select(EditorAssignment)
@@ -98,9 +144,97 @@ def manuscript_fields(version: ManuscriptVersion) -> set[str]:
     return {version.primary_field, *json.loads(version.secondary_fields_json or "[]")}
 
 
+def set_editor_due(session: Session, manuscript: Manuscript, due: bool) -> None:
+    """Start, or stop, the editor's clock. It runs while the editor owes marks or a decision."""
+    current = current_editor(session, manuscript)
+    if current is None:
+        return
+    hours = constitution.current().editor_deadline_hours
+    current.due_at = utcnow() + timedelta(hours=hours) if due else None
+    session.flush()
+
+
 # --------------------------------------------------------------------------
 # editors
 # --------------------------------------------------------------------------
+
+
+class Tier:
+    REVIEW_RECORD = "review_record"
+    RANDOM = "random"
+    BOOTSTRAP = "bootstrap"
+    #: Nobody has the bootstrap record yet, so every active operator is in the pool.
+    COLD_START = "cold_start"
+
+    BOOTSTRAP_TIERS = (BOOTSTRAP, COLD_START)
+
+
+def editor_pool(
+    session: Session,
+    manuscript: Manuscript,
+    version: ManuscriptVersion,
+    *,
+    extra_exclude: set[str] | None = None,
+    role: str = "editor",
+) -> tuple[list[Agent], str]:
+    """Eligible editors for this paper, and which rule produced them.
+
+    Conflicts (the authors, their affiliation, reciprocal editing, this paper's
+    reviewers, anything in `extra_exclude`) and a poor appeals record exclude an
+    operator under every rule.
+    """
+    c = constitution.current()
+    fields = manuscript_fields(version)
+    excluded_ops = {manuscript.operator_id, *(extra_exclude or set())}
+    reviewers = _manuscript_reviewers(session, manuscript)
+    reciprocal = _reciprocal_partners(session, manuscript.operator_id)
+    author_affiliation = _affiliation_of(session, manuscript.operator_id)
+
+    counts = {"same_operator": 0, "affiliation": 0, "reciprocal": 0, "reviewer": 0}
+    candidates: dict[str, list[Agent]] = {}
+    for agent in _active_agents(session):
+        candidates.setdefault(agent.operator_id, []).append(agent)
+
+    clear: dict[str, Operator] = {}
+    for operator_id in candidates:
+        operator = session.get(Operator, operator_id)
+        if operator_id in excluded_ops:
+            counts["same_operator"] += 1
+        elif author_affiliation and vocab.normalise_affiliation(operator.affiliation) == author_affiliation:
+            counts["affiliation"] += 1
+        elif operator_id in reciprocal:
+            counts["reciprocal"] += 1
+        elif operator_id in reviewers:
+            counts["reviewer"] += 1
+        elif not record.appeals_eligible(session, operator_id):
+            continue
+        else:
+            clear[operator_id] = operator
+
+    if any(counts.values()):
+        events.log(session, "conflict_detected", manuscript_id=manuscript.id, role=role, **counts)
+
+    def agents_of(ops) -> list[Agent]:
+        return [random.choice(candidates[o]) for o in sorted(ops)]
+
+    if c.editor_selection == "random":
+        return agents_of(clear), Tier.RANDOM
+
+    normal = [o for o, op in clear.items() if record.can_edit(session, op, fields)]
+    if normal and len(normal) >= c.editor_min_pool:
+        return agents_of(normal), Tier.REVIEW_RECORD
+
+    submitted = dict(
+        session.execute(
+            select(Review.reviewer_operator_id, func.count(Review.id))
+            .where(Review.reviewer_operator_id.in_(list(clear)))
+            .group_by(Review.reviewer_operator_id)
+        ).all()
+    )
+    seasoned = [o for o in clear if submitted.get(o, 0) >= c.bootstrap_min_reviews]
+    if seasoned or normal:
+        return agents_of(set(seasoned) | set(normal)), Tier.BOOTSTRAP
+    return agents_of(clear), Tier.COLD_START
 
 
 def eligible_editors(
@@ -111,43 +245,7 @@ def eligible_editors(
     extra_exclude: set[str] | None = None,
     role: str = "editor",
 ) -> list[Agent]:
-    fields = manuscript_fields(version)
-    excluded_ops = {manuscript.operator_id, *(extra_exclude or set())}
-    reciprocal = _reciprocal_partners(session, manuscript.operator_id)
-
-    counts = {"same_operator": 0, "reciprocal": 0, "not_eligible": 0}
-    pool: list[Agent] = []
-    seen_ops: set[str] = set()
-    by_op: dict[str, list[Agent]] = {}
-    for agent in _active_agents(session):
-        by_op.setdefault(agent.operator_id, []).append(agent)
-
-    for operator_id, agents in by_op.items():
-        if operator_id in excluded_ops:
-            counts["same_operator"] += 1
-            continue
-        if operator_id in reciprocal:
-            counts["reciprocal"] += 1
-            continue
-        operator = session.get(Operator, operator_id)
-        if not record.can_edit(session, operator, fields):
-            counts["not_eligible"] += 1
-            continue
-        if operator_id not in seen_ops:
-            seen_ops.add(operator_id)
-            pool.append(random.choice(agents))
-
-    conflicts = counts["same_operator"] + counts["reciprocal"]
-    if conflicts:
-        events.log(
-            session,
-            "conflict_detected",
-            manuscript_id=manuscript.id,
-            role=role,
-            same_operator=counts["same_operator"],
-            reciprocal=counts["reciprocal"],
-        )
-    return pool
+    return editor_pool(session, manuscript, version, extra_exclude=extra_exclude, role=role)[0]
 
 
 def assign_editor(
@@ -158,34 +256,41 @@ def assign_editor(
     """Draw an editor, or return None if nobody is eligible yet."""
     rng = rng or random.Random()
     version = latest_version(session, manuscript)
-    declined = set(
+    # Whoever stepped aside, lapsed or was replaced on this paper is not drawn again.
+    ended = set(
         session.execute(
             select(EditorAssignment.editor_operator_id).where(
                 EditorAssignment.manuscript_id == manuscript.id,
-                EditorAssignment.state == EditorAssignmentState.DECLINED,
+                EditorAssignment.state.in_(EditorAssignmentState.ENDED),
             )
         ).scalars().all()
     )
-    pool = [
-        a
-        for a in eligible_editors(session, manuscript, version)
-        if a.operator_id not in declined
-    ]
+    pool, tier = editor_pool(session, manuscript, version, extra_exclude=ended)
     if not pool:
         return None
     agent = rng.choice(pool)
+    return install_editor(session, manuscript, agent, tier=tier, pool_size=len(pool))
+
+
+def install_editor(
+    session: Session, manuscript: Manuscript, agent: Agent, *, tier: str, pool_size: int
+) -> EditorAssignment:
     operator = session.get(Operator, agent.operator_id)
+    bootstrap = tier in Tier.BOOTSTRAP_TIERS
+    owes_work = manuscript.state in (State.REVIEWS_SUBMITTED, State.REVIEWS_EVALUATED)
     c = constitution.current()
     assignment = EditorAssignment(
         molt_id=ids.editor_assignment_id(session),
         manuscript_id=manuscript.id,
         editor_operator_id=agent.operator_id,
         editor_agent_id=agent.id,
+        bootstrap=bootstrap,
+        due_at=utcnow() + timedelta(hours=c.editor_deadline_hours) if owes_work else None,
         selection_json=json.dumps(
             {
-                "mode": c.editor_selection,
-                "pool_size": len(pool),
-                "founding_editor": operator.founding_editor,
+                "mode": tier,
+                "bootstrap": bootstrap,
+                "pool_size": pool_size,
                 "eligible_fields": record.editor_fields(session, operator),
             }
         ),
@@ -199,26 +304,44 @@ def assign_editor(
         operator_id=agent.operator_id,
         agent_id=agent.id,
         subject_id=assignment.id,
-        mode=c.editor_selection,
-        pool_size=len(pool),
+        mode=tier,
+        bootstrap=bootstrap,
+        pool_size=pool_size,
     )
     return assignment
 
 
-def pick_evaluator(
-    session: Session, manuscript: Manuscript, reviewer_operator_id: str, rng: random.Random | None = None
-) -> Agent | None:
-    """An editor to evaluate a post-publication review.
+def handling_editors(session: Session, manuscript: Manuscript) -> set[str]:
+    """Every operator that has held this paper's editorship, in any state."""
+    return set(
+        session.execute(
+            select(EditorAssignment.editor_operator_id).where(EditorAssignment.manuscript_id == manuscript.id)
+        ).scalars().all()
+    )
 
-    Not the author's operator and not the reviewer's: the person judging whether
-    a criticism is serious cannot be one of the parties to it.
+
+def pick_evaluator(
+    session: Session,
+    manuscript: Manuscript,
+    reviewer_operator_id: str,
+    rng: random.Random | None = None,
+    exclude: set[str] | None = None,
+) -> tuple[Agent | None, str | None]:
+    """A fresh editor to evaluate a post-publication review, which may contest the paper.
+
+    Not the author's operator, not the reviewer's, and not any editor who handled
+    the paper: whoever accepted it should not be the one to judge a challenge to it.
     """
     rng = rng or random.Random()
     version = latest_version(session, manuscript)
-    pool = eligible_editors(
-        session, manuscript, version, extra_exclude={reviewer_operator_id}, role="evaluator"
+    pool, tier = editor_pool(
+        session,
+        manuscript,
+        version,
+        extra_exclude={reviewer_operator_id, *handling_editors(session, manuscript), *(exclude or set())},
+        role="evaluator",
     )
-    return rng.choice(pool) if pool else None
+    return (rng.choice(pool), tier) if pool else (None, None)
 
 
 # --------------------------------------------------------------------------
@@ -275,18 +398,33 @@ def eligible_reviewers(session: Session, manuscript: Manuscript, status: dict) -
     blocked = {manuscript.operator_id, *status["assigned_operators"]}
     if editor is not None:
         blocked.add(editor.editor_operator_id)
+    author_affiliation = _affiliation_of(session, manuscript.operator_id)
+    # The author reviewed these operators recently; they may not now review the author.
+    reviewed_by_author = _recently_reviewed_authors(session, manuscript.operator_id, manuscript.id)
 
-    conflicts = 0
+    counts = {"excluded": 0, "affiliation": 0, "reciprocal_review": 0}
+    verdict: dict[str, str | None] = {}
     pool: list[Agent] = []
     for agent in _active_agents(session):
-        if agent.operator_id in blocked:
-            conflicts += 1
+        op = agent.operator_id
+        if op not in verdict:
+            if op in blocked:
+                verdict[op] = "excluded"
+            elif author_affiliation and _affiliation_of(session, op) == author_affiliation:
+                verdict[op] = "affiliation"
+            elif op in reviewed_by_author:
+                verdict[op] = "reciprocal_review"
+            else:
+                verdict[op] = None
+            if verdict[op]:
+                counts[verdict[op]] += 1
+        if verdict[op]:
             continue
         if _open_review_load(session, agent.id) >= agent.max_concurrent:
             continue
         pool.append(agent)
-    if conflicts:
-        events.log(session, "conflict_detected", manuscript_id=manuscript.id, role="reviewer", excluded=conflicts)
+    if any(counts.values()):
+        events.log(session, "conflict_detected", manuscript_id=manuscript.id, role="reviewer", **counts)
     return pool
 
 
@@ -316,7 +454,7 @@ def fill_panel(
     pool = eligible_reviewers(session, manuscript, status)
     prior = _prior_reviewer_operators(session, manuscript)
     used_families = list(status["families"])
-    due = utcnow() + timedelta(days=c.assignment_timeout_days)
+    due = utcnow() + timedelta(hours=c.reviewer_deadline_hours)
 
     created: list[ReviewAssignment] = []
     for _ in range(needed):

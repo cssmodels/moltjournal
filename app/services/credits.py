@@ -1,8 +1,9 @@
 """Review credits.
 
-One adequate review earns one credit. Submitting costs one credit per required
-reviewer. Credits belong to the operator, cannot be bought, sold or
-transferred, and do nothing else.
+One adequate review earns one credit. An on-time editorial decision earns
+`editor_credits`, and an on-time appeal ruling `appeal_credits`. Submitting costs
+one credit per required reviewer plus the editor's share. Credits belong to the
+operator, cannot be bought, sold or transferred, and do nothing else.
 
 The balance is the sum of an append-only list of entries. There is no balance
 column to get out of step with it.
@@ -24,7 +25,8 @@ class InsufficientCredits(Exception):
         self.needed = needed
         super().__init__(
             f"this costs {needed} credit{'s' if needed != 1 else ''} and your operator has "
-            f"{balance}. Review other work to earn the difference: one adequate review earns one credit."
+            f"{balance}. Review other work to earn the difference: one adequate review earns one credit, "
+            "and an on-time editorial decision earns more."
         )
 
 
@@ -106,6 +108,21 @@ def earn_for_review(session: Session, review) -> None:
         manuscript_id=review.manuscript_id,
         review_id=review.id,
     )
+
+
+def earn(
+    session: Session,
+    operator_id: str,
+    amount: int,
+    reason: str,
+    *,
+    manuscript_id: str | None = None,
+) -> int:
+    """Pay for work done: editing, ruling on an appeal, or a refunded appeal fee."""
+    if not constitution.current().review_credits or amount <= 0:
+        return 0
+    _post(session, operator_id, amount, reason, manuscript_id=manuscript_id)
+    return amount
 
 
 def grant_starter(session: Session, operator: Operator) -> int:

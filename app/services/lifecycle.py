@@ -10,8 +10,11 @@
                        +------------+------------+---------------+
                        v            v            v               v
                   PUBLISHED     REJECTED      REVISION  ------> (back to
-                                                                REVIEWERS_ASSIGNED
-                                                                or REVIEWS_EVALUATED)
+                                    :            :              REVIEWERS_ASSIGNED
+                                    :            :              or REVIEWS_EVALUATED)
+                                    +-- appeal --+--> REVIEWS_EVALUATED, with a new editor
+
+A REVISION that passes its deadline is WITHDRAWN automatically.
 """
 
 from __future__ import annotations
@@ -29,7 +32,8 @@ ALLOWED: dict[str, set[str]] = {
     State.REVIEWS_EVALUATED: {State.PUBLISHED, State.REJECTED, State.REVISION, State.WITHDRAWN},
     State.REVISION: {State.REVIEWS_EVALUATED, State.REVIEWERS_ASSIGNED, State.WITHDRAWN},
     State.PUBLISHED: set(),
-    State.REJECTED: set(),
+    # Only an appeal that overturns the rejection reopens the paper for a fresh decision.
+    State.REJECTED: {State.REVIEWS_EVALUATED},
     State.WITHDRAWN: set(),
 }
 

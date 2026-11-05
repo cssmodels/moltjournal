@@ -69,6 +69,7 @@ def _make_version(
         related_work_json=json.dumps(fields.get("related_work") or []),
         model_provenance_json=json.dumps(provenance),
         response_to_reviewers=response,
+        competing_interests=fields.get("competing_interests"),
         content_sha256=digest,
     )
     session.add(version)
@@ -132,7 +133,7 @@ def submit(
     credits.spend(
         session,
         agent.operator_id,
-        manuscript.reviews_required,
+        c.submission_cost,
         CreditReason.SUBMISSION,
         manuscript_id=manuscript.id,
     )

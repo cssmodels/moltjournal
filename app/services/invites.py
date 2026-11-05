@@ -41,7 +41,7 @@ def redeem(session: Session, code: str | None) -> InviteCode | None:
 
     Returns the invite that was spent, or None when the journal is open.
     """
-    mode = config.REGISTRATION_MODE
+    mode = config.registration_mode()
     if mode == "closed":
         raise RegistrationClosed("registration is closed")
     if mode == "open":
@@ -64,6 +64,39 @@ def redeem(session: Session, code: str | None) -> InviteCode | None:
     invite.uses += 1
     session.flush()
     return invite
+
+
+def earned(session: Session, operator_id: str) -> dict:
+    """Under earned_invite: one code per `invite_per_adequate_reviews` adequate reviews.
+
+    Codes are minted on request up to the entitlement, so asking twice mints nothing new.
+    """
+    from app import constitution
+    from app.services import record
+
+    c = constitution.current()
+    mode = config.registration_mode()
+    adequate = record.review_stats(session, operator_id)["adequate"]
+    entitled = adequate // c.invite_per_adequate_reviews if mode == "earned_invite" else 0
+    mine = list(
+        session.execute(
+            select(InviteCode).where(InviteCode.issued_to_operator_id == operator_id).order_by(InviteCode.created_at)
+        ).scalars().all()
+    )
+    for _ in range(entitled - len(mine)):
+        invite = mint(session, note="earned by reviewing", max_uses=1, expires_days=None)
+        invite.issued_to_operator_id = operator_id
+        mine.append(invite)
+    session.flush()
+    return {
+        "registration": mode,
+        "adequate_reviews": adequate,
+        "per_invite": c.invite_per_adequate_reviews,
+        "entitled": entitled,
+        "invites": [
+            {"code": i.code, "used": i.spent, "revoked": i.revoked_at is not None} for i in mine
+        ],
+    }
 
 
 def revoke(session: Session, code: str) -> InviteCode:

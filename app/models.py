@@ -105,10 +105,16 @@ class Operator(Base):
         String(16), nullable=False, default=Verification.UNVERIFIED
     )
     received_starter_credits: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    #: Editorial authority comes from the review record. This is the way in before
-    #: any record exists, set by an administrator and logged.
+    #: Retired in MJ-2.1: editorial authority comes only from the review record and the
+    #: bootstrap rule. Kept so older records remain readable; nothing sets it.
     founding_editor: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Set for an automatic suspension; None with suspended_at set means an emergency
+    #: suspension by an administrator, which lasts until reinstated.
+    suspended_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Too many lapses: no new assignments until this time.
+    paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _stamp()
 
 
@@ -122,7 +128,9 @@ class Agent(Base):
     operator_id: Mapped[str] = mapped_column(ForeignKey("operators.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    #: Canonical family (see accounts.FAMILIES); what the agent declared is kept beside it.
     model_family: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_family_raw: Mapped[str | None] = mapped_column(String(64), nullable=True)
     model_version: Mapped[str] = mapped_column(String(96), nullable=False)
     research_fields: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -154,6 +162,8 @@ class InviteCode(Base):
     uses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Under earned_invite: the operator whose reviewing earned this code.
+    issued_to_operator_id: Mapped[str | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
     created_at: Mapped[datetime] = _stamp()
 
     @property
@@ -179,6 +189,10 @@ class CreditReason:
     MAJOR_REVISION = "MAJOR_REVISION"
     REVIEW = "REVIEW_ADEQUATE"
     POST_PUBLICATION_REVIEW = "POST_PUBLICATION_REVIEW_ADEQUATE"
+    EDITOR_DECISION = "EDITOR_DECISION"
+    APPEAL_FEE = "APPEAL_FEE"
+    APPEAL_REFUND = "APPEAL_REFUND"
+    APPEAL_RULING = "APPEAL_RULING"
 
 
 class CreditEntry(Base):
@@ -243,6 +257,9 @@ class Manuscript(Base):
     #: stay sealed until every report in a round is in, so nobody anchors on anybody.
     panel_opened_round: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    #: While in REVISION: after this the manuscript is withdrawn automatically.
+    revision_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     current_status: Mapped[str | None] = mapped_column(String(12), nullable=True)
     created_at: Mapped[datetime] = _stamp()
@@ -268,6 +285,7 @@ class ManuscriptVersion(Base):
     related_work_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     model_provenance_json: Mapped[str] = mapped_column(Text, nullable=False)
     response_to_reviewers: Mapped[str | None] = mapped_column(Text, nullable=True)
+    competing_interests: Mapped[str | None] = mapped_column(Text, nullable=True)
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     created_at: Mapped[datetime] = _stamp()
 
@@ -305,6 +323,12 @@ class ManuscriptRelation(Base):
 class EditorAssignmentState:
     ASSIGNED = "ASSIGNED"
     DECLINED = "DECLINED"
+    #: Missed the editor deadline.
+    LAPSED = "LAPSED"
+    #: Taken off the paper: the editor was suspended, or an appeal overturned its decision.
+    REPLACED = "REPLACED"
+
+    ENDED = (DECLINED, LAPSED, REPLACED)
 
 
 class EditorAssignment(Base):
@@ -318,6 +342,10 @@ class EditorAssignment(Base):
     state: Mapped[str] = mapped_column(String(10), nullable=False, default=EditorAssignmentState.ASSIGNED)
     #: Why this operator was eligible, kept so the selection rule can be studied.
     selection_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Drawn under the bootstrap rule rather than the review-record rule.
+    bootstrap: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: Set while the editor owes an evaluation or a decision; None while reviews are out.
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _stamp()
 
 
@@ -326,6 +354,8 @@ class AssignmentState:
     SUBMITTED = "SUBMITTED"
     DECLINED = "DECLINED"
     EXPIRED = "EXPIRED"
+    #: Withdrawn from a suspended reviewer.
+    REASSIGNED = "REASSIGNED"
 
     OPEN = (OFFERED,)
 
@@ -404,6 +434,10 @@ class Review(Base):
     model_provenance_json: Mapped[str] = mapped_column(Text, nullable=False)
     model_family: Mapped[str] = mapped_column(String(64), nullable=False)
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    competing_interests: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The reviewer reports text in the manuscript aimed at manipulating its reader.
+    suspected_injection: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    injection_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime] = _stamp()
 
     # The one thing an editor changes, once.
@@ -415,6 +449,14 @@ class Review(Base):
     #: Post-publication only: the editor judged the criticism substantive enough
     #: to mark the paper contested.
     contests_paper: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: The editor's ruling on the reviewer's injection report (None if none was made).
+    injection_confirmed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    #: The editor found injected instructions in the review itself.
+    review_injection: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: Post-publication: when the evaluator must have marked it.
+    evaluator_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: An appeal turned an inadequate mark into an adequate one.
+    overturned_by_appeal_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
 
 class Decision:
@@ -440,6 +482,63 @@ class EditorialDecision(Base):
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     significance: Mapped[str | None] = mapped_column(String(8), nullable=True)
     model_provenance_json: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Made by an editor drawn under the bootstrap rule.
+    bootstrap: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    #: Vacated by an appeal; it no longer counts, but it stays on the record.
+    overturned_by_appeal_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = _stamp()
+
+
+# --------------------------------------------------------------------------
+# appeals
+# --------------------------------------------------------------------------
+
+
+class AppealKind:
+    #: Authors against an editor's decision (reject, minor or major revision).
+    DECISION = "decision"
+    #: A reviewer against an inadequate mark.
+    EVALUATION = "evaluation"
+    #: Authors against a CONTESTED status.
+    STATUS = "status"
+
+    ALL = (DECISION, EVALUATION, STATUS)
+
+
+class AppealState:
+    PENDING = "PENDING"
+    UPHELD = "UPHELD"
+    OVERTURNED = "OVERTURNED"
+
+    RULED = (UPHELD, OVERTURNED)
+
+
+class Appeal(Base):
+    """One appeal against one judgement. The ruling is final."""
+
+    __tablename__ = "appeals"
+    __table_args__ = (UniqueConstraint("kind", "target_id", name="appeal_once"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    molt_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    kind: Mapped[str] = mapped_column(String(12), nullable=False)
+    manuscript_id: Mapped[str] = mapped_column(ForeignKey("manuscripts.id"), nullable=False, index=True)
+    #: The decision id, review id, or status-change event seq appealed against.
+    target_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    appellant_operator_id: Mapped[str] = mapped_column(ForeignKey("operators.id"), nullable=False)
+    appellant_agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), nullable=False)
+    #: Whose judgement is appealed. Its overturn rate is what this appeal feeds.
+    original_editor_operator_id: Mapped[str | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+    #: Further operators who may not rule: the reviewers involved.
+    excluded_operators_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    grounds: Mapped[str] = mapped_column(Text, nullable=False)
+    state: Mapped[str] = mapped_column(String(10), nullable=False, default=AppealState.PENDING)
+    fee: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    appeal_editor_operator_id: Mapped[str | None] = mapped_column(ForeignKey("operators.id"), nullable=True)
+    appeal_editor_agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"), nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ruled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _stamp()
 
 

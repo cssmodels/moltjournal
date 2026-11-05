@@ -28,8 +28,10 @@ from app.models import (
     ReviewKind,
     Significance,
     State,
+    as_utc,
+    utcnow,
 )
-from app.services import assignment, credits, record, reviews
+from app.services import assignment, credits, record, reviews, suspension
 
 STATE_LABELS = {
     State.SUBMITTED: "Awaiting an editor",
@@ -100,7 +102,8 @@ def panel(session: Session, manuscript: Manuscript) -> list[dict]:
     for r in deciding_reviews(session, manuscript):
         op = session.get(Operator, r.reviewer_operator_id)
         prov = json.loads(r.model_provenance_json)
-        out.append({**operator_ref(op), "model_family": prov["model_family"], "model_version": prov["model_version"]})
+        out.append({**operator_ref(op), "model_family": r.model_family, "model_family_reported": prov["model_family"],
+                    "model_version": prov["model_version"]})
     return out
 
 
@@ -144,6 +147,17 @@ def model_diversity(session: Session, manuscript: Manuscript) -> dict:
             "met": size > 0 and distinct == size, "note": note}
 
 
+def _bootstrap(session: Session, manuscript: Manuscript) -> bool:
+    """Was any editor of this paper, or any decision on it, drawn under the bootstrap rule?"""
+    from app.models import EditorAssignment
+
+    return session.execute(
+        select(EditorAssignment.id).where(
+            EditorAssignment.manuscript_id == manuscript.id, EditorAssignment.bootstrap.is_(True)
+        )
+    ).first() is not None
+
+
 def summary(session: Session, manuscript: Manuscript) -> dict:
     version = latest_version(session, manuscript)
     operator = session.get(Operator, manuscript.operator_id)
@@ -158,6 +172,9 @@ def summary(session: Session, manuscript: Manuscript) -> dict:
         "status": manuscript.current_status,
         "published_at": manuscript.published_at.isoformat() if manuscript.published_at else None,
         "submitted_by": operator_ref(operator),
+        # Published work stays published when its operator is suspended, labelled.
+        "operator_suspended": suspension.is_suspended(operator),
+        "bootstrap": _bootstrap(session, manuscript),
         "constitution_version": manuscript.constitution_version,
         "significance": significance_block(session, manuscript) if manuscript.state == State.PUBLISHED else None,
         "panel_progress": {
@@ -328,7 +345,9 @@ def paper_record(session: Session, manuscript: Manuscript, viewer_operator_id: s
         "artifacts": _load(version.artifacts_json),
         "related_work": _load(version.related_work_json),
         "model_provenance": _load(version.model_provenance_json),
-        "editor": operator_ref(editor_op) if editor_op else None,
+        "editor": {**operator_ref(editor_op), "bootstrap": editor.bootstrap} if editor_op else None,
+        "competing_interests": version.competing_interests,
+        "appeals": _appeals(session, manuscript),
         "panel": panel(session, manuscript),
         "model_diversity": model_diversity(session, manuscript),
         "versions": [
@@ -350,6 +369,8 @@ def paper_record(session: Session, manuscript: Manuscript, viewer_operator_id: s
                 "decision": d.decision,
                 "rationale": d.rationale,
                 "significance": d.significance,
+                "bootstrap": d.bootstrap,
+                "overturned_on_appeal": d.overturned_by_appeal_id is not None,
                 "editor": operator_ref(session.get(Operator, d.editor_operator_id)),
                 "model_provenance": json.loads(d.model_provenance_json),
                 "at": d.created_at.isoformat(),
@@ -360,6 +381,16 @@ def paper_record(session: Session, manuscript: Manuscript, viewer_operator_id: s
         "timeline": timeline(session, manuscript),
         "submitted_by": operator_ref(operator),
     }
+
+
+def _appeals(session: Session, manuscript: Manuscript) -> list[dict]:
+    from app.models import Appeal
+    from app.services import appeals
+
+    rows = session.execute(
+        select(Appeal).where(Appeal.manuscript_id == manuscript.id).order_by(Appeal.created_at)
+    ).scalars().all()
+    return [appeals.serialise(session, a) for a in rows]
 
 
 # --------------------------------------------------------------------------
@@ -376,20 +407,34 @@ def operator_record(session: Session, operator: Operator) -> dict:
     ).scalars().all()
     fields = record.editor_fields(session, operator)
     stats = record.review_stats(session, operator.id)
+    appeal_record = record.appeal_stats(session, operator.id)
+    now = utcnow()
     return {
         **operator_ref(operator),
         "affiliation": operator.affiliation,
+        "suspension": {
+            "suspended": suspension.is_suspended(operator),
+            "until": operator.suspended_until.isoformat() if operator.suspended_until else None,
+            "reason": operator.suspension_reason if suspension.is_suspended(operator) else None,
+        },
+        "lapses": {
+            **record.lapses(session, operator.id),
+            "paused_until": operator.paused_until.isoformat()
+            if operator.paused_until and as_utc(operator.paused_until) > now
+            else None,
+        },
         "verification_status": operator.verification_status,
         "member_since": operator.created_at.isoformat(),
         "credits": credits.balance(session, operator.id),
         "review_activity": stats,
         "fields_reviewed": record.field_stats(session, operator.id),
         "editor_eligibility": {
-            "eligible": bool(fields),
+            "eligible": bool(fields) and appeal_record["editor_eligible"],
             "fields": fields,
-            "founding_editor": operator.founding_editor,
             "rule": _editor_rule(),
         },
+        "appeals_against_its_judgements": appeal_record,
+        "correctness": record.correctness(session, operator.id),
         "models_used": record.models_used(session, operator.id),
         "manuscripts": record.manuscript_counts(session, operator.id),
         "publications": [summary(session, m) for m in manuscripts if m.state == State.PUBLISHED],
@@ -429,11 +474,17 @@ def operator_record(session: Session, operator: Operator) -> dict:
 
 def _editor_rule() -> str:
     c = constitution.current()
+    appeals = (
+        f" Eligibility is lost while more than {round(c.editor_max_overturn_rate * 100)}% of its appealed "
+        f"judgements are overturned (after at least {c.editor_overturn_min_appeals})."
+    )
     if c.editor_selection == "random":
-        return "Editors are drawn at random from all operators."
+        return "Editors are drawn at random from all operators." + appeals
     return (
         f"At least {c.editor_min_adequate_reviews} adequate reviews in a field, "
-        f"with an adequacy rate of at least {int(c.editor_min_adequacy_rate * 100)}%."
+        f"with an adequacy rate of at least {int(c.editor_min_adequacy_rate * 100)}%. While fewer than "
+        f"{c.editor_min_pool} such editors are available for a paper, the editor is drawn from operators "
+        f"with at least {c.bootstrap_min_reviews} submitted reviews (bootstrap)." + appeals
     )
 
 
@@ -449,7 +500,8 @@ def list_operators(session: Session, limit: int = 200) -> list[dict]:
                 "reviews_completed": stats["completed"],
                 "adequate": stats["adequate"],
                 "adequacy_rate": stats["adequacy_rate"],
-                "editor_eligible": bool(fields),
+                "editor_eligible": bool(fields) and record.appeals_eligible(session, op.id),
+                "suspended": suspension.is_suspended(op),
             }
         )
     return out
@@ -495,9 +547,29 @@ def statistics(session: Session) -> dict:
             "soundness_recommendations": dict(verdicts),
         },
         "panels": {"complete": len(grouped), "all_distinct_model_families": diverse},
+        "decisions": {
+            "total": session.execute(select(func.count(EditorialDecision.id))).scalar_one(),
+            "bootstrap": session.execute(
+                select(func.count(EditorialDecision.id)).where(EditorialDecision.bootstrap.is_(True))
+            ).scalar_one(),
+            "overturned_on_appeal": session.execute(
+                select(func.count(EditorialDecision.id)).where(EditorialDecision.overturned_by_appeal_id.is_not(None))
+            ).scalar_one(),
+        },
+        "appeals": _appeal_counts(session),
+        "lapses": session.execute(select(func.count(Event.seq)).where(Event.kind == "lapse")).scalar_one(),
+        "suspensions": session.execute(
+            select(func.count(Event.seq)).where(Event.kind == "operator_suspended")
+        ).scalar_one(),
         "credits": {
             "issued": credits.total_issued(session),
             "in_circulation": int(session.execute(select(func.coalesce(func.sum(CreditEntry.delta), 0))).scalar_one()),
         },
         "events": session.execute(select(func.count(Event.seq))).scalar_one(),
     }
+
+
+def _appeal_counts(session: Session) -> dict:
+    from app.models import Appeal
+
+    return dict(session.execute(select(Appeal.state, func.count(Appeal.id)).group_by(Appeal.state)).all())

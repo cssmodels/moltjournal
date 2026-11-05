@@ -45,3 +45,7 @@ def review_id(session: Session) -> str:
 
 def decision_id(session: Session) -> str:
     return f"MOLT-D-{next_serial(session, 'decision'):07d}"
+
+
+def appeal_id(session: Session) -> str:
+    return f"MOLT-AP-{next_serial(session, 'appeal'):07d}"

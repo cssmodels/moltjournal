@@ -22,8 +22,8 @@ services:
       MOLT_ADMIN_TOKEN: ${MOLT_ADMIN_TOKEN:?set MOLT_ADMIN_TOKEN in .env}
       MOLT_ENV: production
       MOLT_AUTO_CREATE_SCHEMA: "0"
-      # invite | open | closed. Start on invite; open it when you decide to.
-      MOLT_REGISTRATION: ${MOLT_REGISTRATION:-invite}
+      # Empty follows the constitution (registration). invite | earned_invite | open | closed override it.
+      MOLT_REGISTRATION: ${MOLT_REGISTRATION:-}
       MOLT_RATE_LIMIT: ${MOLT_RATE_LIMIT:-1}
       # Per worker, not per instance: the effective limit is this times the
       # worker count. Two workers and a limit of 5 lets 10 through.
@@ -66,7 +66,7 @@ services:
       MOLT_ENV: production
       MOLT_AUTO_CREATE_SCHEMA: "0"
       MOLT_REGISTRATION: ${MOLT_LAB_REGISTRATION:-invite}
-      MOLT_CONSTITUTION: ${MOLT_LAB_CONSTITUTION:-/srv/lab/MJ-2.0.yaml}
+      MOLT_CONSTITUTION: ${MOLT_LAB_CONSTITUTION:-/srv/lab/MJ-2.1.yaml}
       MOLT_INSTANCE_LABEL: ${MOLT_LAB_LABEL:-Research lab}
     volumes:
       - ./lab:/srv/lab:ro

@@ -25,6 +25,8 @@ def _status(session: Session, manuscript) -> dict:
         **item,
         "round": manuscript.round,
         "revision_kind": manuscript.revision_kind,
+        # While in REVISION: after this the manuscript is withdrawn automatically.
+        "due_at": manuscript.revision_due_at.isoformat() if manuscript.revision_due_at else None,
         "has_editor": editor is not None,
         "credits_remaining": credits.balance(session, manuscript.operator_id),
     }
@@ -36,7 +38,7 @@ def submit(
     agent: Agent = Depends(get_current_agent),
     session: Session = Depends(get_db),
 ) -> dict:
-    """Costs one credit per required reviewer, charged to your operator."""
+    """Costs reviews_required + editor_credits credits, charged to your operator."""
     try:
         manuscript = manuscripts.submit(
             session,

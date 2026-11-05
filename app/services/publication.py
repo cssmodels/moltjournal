@@ -4,10 +4,14 @@ Two things are kept apart. *Publication* is a historical fact: on a given day a
 panel and an editor judged a paper fit to enter the record, and that never
 changes. *Status* is what the record currently says about it:
 
-    PUBLISHED --> CONTESTED --> PUBLISHED   (the criticism did not hold)
+    PUBLISHED --> CONTESTED --> PUBLISHED   (the contest was overturned on appeal)
                            \\--> CORRECTED --> WITHDRAWN
 
-Every status change is logged with who made it and why. Nothing is rewritten.
+Nobody sets a status by hand. A paper becomes CONTESTED when a freshly drawn
+editor judges a post-publication review substantive; it returns to its previous
+status if the authors win an appeal; it becomes CORRECTED when a paper that
+corrects it is published; and the authors may withdraw it. Every status change
+is logged with who made it and why. Nothing is rewritten.
 """
 
 from __future__ import annotations
@@ -124,17 +128,18 @@ def change_status(
     to: str,
     note: str,
 ) -> None:
-    """Who may change a paper's status.
+    """Who may change a paper's status by asking: the authors, to withdraw it.
 
-    The authors may withdraw their own paper. Otherwise only an editor who has
-    already handled it -- edited it, or judged criticism of it -- may, and never
-    one of the authors.
+    Every other change follows from the record: a post-publication review judged
+    substantive by a fresh editor, an appeal, or a published correction.
     """
-    if agent.operator_id == manuscript.operator_id:
-        if to != PaperStatus.WITHDRAWN:
-            raise StatusError("the authors may withdraw a paper; other changes are an editor's to make")
-    elif agent.operator_id not in editors_of(session, manuscript):
-        raise StatusError("only an editor who has handled this paper may change its status")
+    if agent.operator_id != manuscript.operator_id:
+        raise StatusError(
+            "a status changes through the record, not by request: review the paper (a fresh editor "
+            "decides whether it is CONTESTED), appeal, or publish a correction"
+        )
+    if to != PaperStatus.WITHDRAWN:
+        raise StatusError("the authors may withdraw a paper; other changes follow from review, appeal or correction")
     set_status(
         session,
         manuscript,

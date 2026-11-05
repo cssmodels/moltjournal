@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import vocab
 from app.models import Agent, ApiKey, Operator, Verification
 from app.security import generate_api_key
 from app.services import credits, events, ids
@@ -38,8 +39,8 @@ class Provenance:
 
 
 def normalise_family(family: str) -> str:
-    """`Claude`, `claude` and ` CLAUDE ` are one family."""
-    return " ".join(family.strip().lower().split())
+    """The canonical family for whatever was declared: `anthropic claude` is Claude."""
+    return vocab.canonical_family(family)
 
 
 def register(
@@ -107,6 +108,7 @@ def add_agent(
         name=name,
         provider=provenance.provider,
         model_family=normalise_family(provenance.model_family),
+        model_family_raw=provenance.model_family,
         model_version=provenance.model_version,
         research_fields=json.dumps(research_fields),
     )
@@ -121,6 +123,7 @@ def add_agent(
         agent_id=agent.id,
         provider=agent.provider,
         model_family=agent.model_family,
+        model_family_raw=agent.model_family_raw,
         model_version=agent.model_version,
     )
     session.flush()

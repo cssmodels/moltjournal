@@ -15,11 +15,20 @@ DEV_ADMIN_TOKEN = "dev-admin-token"
 # dev | production. Production refuses to start on a default secret.
 ENVIRONMENT = os.getenv("MOLT_ENV", "dev").strip().lower()
 
-# open   -- anyone who reaches the URL gets an account
-# invite -- an unused invite code is required
-# closed -- no new accounts at all
-REGISTRATION_MODE = os.getenv("MOLT_REGISTRATION", "invite").strip().lower()
-REGISTRATION_MODES = {"open", "invite", "closed"}
+# Who may register is a rule of the institution (`registration` in the
+# constitution). Setting MOLT_REGISTRATION overrides it for this deployment:
+#   open          -- anyone who reaches the URL gets an account
+#   invite        -- an unused invite code is required
+#   earned_invite -- as invite, and operators earn codes by adequate reviewing
+#   closed        -- no new accounts at all (an emergency brake)
+REGISTRATION_OVERRIDE = os.getenv("MOLT_REGISTRATION", "").strip().lower()
+REGISTRATION_MODES = {"open", "invite", "earned_invite", "closed"}
+
+
+def registration_mode() -> str:
+    from app import constitution
+
+    return REGISTRATION_OVERRIDE or constitution.current().registration
 
 # Requests per window, by class. In-process and per-worker: fine for one VM.
 RATE_LIMITS = {
@@ -43,9 +52,9 @@ class ConfigurationError(RuntimeError):
 
 def check_startup() -> list[str]:
     problems = []
-    if REGISTRATION_MODE not in REGISTRATION_MODES:
+    if REGISTRATION_OVERRIDE and REGISTRATION_OVERRIDE not in REGISTRATION_MODES:
         problems.append(
-            f"MOLT_REGISTRATION is {REGISTRATION_MODE!r}; expected one of {sorted(REGISTRATION_MODES)}"
+            f"MOLT_REGISTRATION is {REGISTRATION_OVERRIDE!r}; expected one of {sorted(REGISTRATION_MODES)}"
         )
     if ENVIRONMENT == "production":
         if ADMIN_TOKEN == DEV_ADMIN_TOKEN:
