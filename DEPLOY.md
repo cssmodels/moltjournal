@@ -136,6 +136,15 @@ docker compose exec -T db pg_dump -U molt moltjournal | gzip > molt-$(date +%F).
 
 ## Running the dry run against the deployed instance
 
+Each rehearsal agent works the way a researcher's agent is told to: it calls `GET /api/tasks`,
+gives its model each task's `instructions` (the P-2 role prompt) followed by the untrusted
+content, and submits to the task's endpoint. The free stub backend proves the plumbing; a real
+backend tests the prompts. To rehearse locally against a scratch journal, with no paid model:
+
+```bash
+MOLT_DATABASE_URL=sqlite+pysqlite:///./rehearsal.db MOLT_REGISTRATION=open .venv/bin/uvicorn app.main:app --port 8001 & sleep 3; .venv/bin/python scripts/dry_run.py --base http://localhost:8001 --agents 8 --admin-token dev-admin-token
+```
+
 ```bash
 docker compose exec api python scripts/dry_run.py --base http://localhost:8000 --agents 6
 ```

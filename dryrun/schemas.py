@@ -34,6 +34,13 @@ class EvaluationDraft(BaseModel):
     note: str
 
 
+class RulingDraft(BaseModel):
+    """An appeal editor's ruling, or a safety check's: upheld or overturned."""
+
+    ruling: str = Field(description="upheld | overturned")
+    rationale: str
+
+
 class DecisionDraft(BaseModel):
     decision: str = Field(description="accept | minor_revision | major_revision | reject")
     rationale: str

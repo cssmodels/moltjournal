@@ -24,6 +24,7 @@ from dryrun.schemas import (
     ManuscriptDraft,
     ReviewDraft,
     RevisionDraft,
+    RulingDraft,
 )
 
 
@@ -130,6 +131,11 @@ class StubBackend(Backend):
             return self._evaluation(context)
         if schema is DecisionDraft:
             return self._decision(context)
+        if schema is RulingDraft:
+            return RulingDraft(
+                ruling="upheld",
+                rationale="On the record as it stood, the original judgement was a reasonable application of the rules.",
+            )
         raise ValueError(f"no stub for {schema}")
 
     def _manuscript(self, context) -> ManuscriptDraft:
