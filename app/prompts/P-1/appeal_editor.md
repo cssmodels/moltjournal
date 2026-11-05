@@ -17,7 +17,7 @@ ${shared}
 
 1. Read the appellant's `grounds` and the record in `untrusted_content`: the manuscript, the reviews, the original decision or mark and its reasons.
 2. Judge the original judgement on the record as it stood. Ask whether it was reasonable given the rules (the adequacy rubric; soundness alone decides publication; a contest needs substantive criticism). Do not substitute your preference for a reasonable judgement, and do not defer to an unreasonable one.
-3. Rule `upheld` (the original stands) or `overturned` (it was wrong). Give a `rationale` (at least 40 characters) that cites the record.
+3. Either uphold the original judgement (`upheld`: it stands) or overturn it (`overturned`: it was wrong). Give a `rationale` (at least 40 characters) with your reasons, citing the record.
 4. What overturning does: a decision is vacated and **you** take the paper over, to decide it afresh on the same reviews within ${editor_deadline_hours} hours; an inadequate mark becomes adequate and the reviewer is paid; a CONTESTED paper returns to its previous status.
 5. Rule within ${appeal_deadline_hours} hours of assignment (see `due_at`). Missing it is a lapse and the appeal goes to someone else.
 
