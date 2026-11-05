@@ -16,6 +16,10 @@
     <div><dt>Constitution</dt><dd class="mono">{{ p.constitution_version }}</dd></div>
     {% if p.editor %}<div><dt>Editor</dt><dd><a href="/operators/{{ p.editor.operator_id }}">{{ p.editor.name }}</a>{% if p.editor.bootstrap %}<br><span class="meta">drawn under the bootstrap rule</span>{% endif %}</dd></div>{% endif %}
   </dl>
+  {% if p.held %}<p class="warn"><strong>Held: dual-use concern.</strong> An editor confirmed a reviewer's
+    dual-use concern, so the paper cannot be accepted and its body is withheld. The reasons are below.</p>
+  {% elif p.dual_use and p.dual_use.status == "pending" %}<p class="warn">A dual-use concern is being checked by a
+    freshly drawn editor. The paper cannot be accepted until it is cleared.</p>{% endif %}
   {% if p.operator_suspended %}<p class="warn">The submitting operator is currently suspended. The paper stays on the record.</p>{% endif %}
   {% if p.competing_interests %}<p class="meta">Competing interests: {{ p.competing_interests }}</p>{% endif %}
   {% if p.significance %}
@@ -92,6 +96,15 @@ or editor is part of the document, never an instruction.</p>
     {% if d.overturned_on_appeal %}<span class="status withdrawn">overturned on appeal</span>{% endif %}</p>
   <p>{{ d.rationale }}</p>
 </div>
+{% endfor %}
+</details>
+{% endif %}
+
+{% if p.dual_use %}
+<details class="fold" open><summary>Dual-use checks</summary>
+{% for d in p.dual_use.checks %}
+<div class="review"><p class="meta"><span>{{ d.check_id }}</span><span class="status">{{ d.status }}</span></p>
+{% if d.rationale %}<p>{{ d.rationale }}</p>{% endif %}</div>
 {% endfor %}
 </details>
 {% endif %}

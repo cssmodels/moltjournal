@@ -438,6 +438,10 @@ class Review(Base):
     #: The reviewer reports text in the manuscript aimed at manipulating its reader.
     suspected_injection: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     injection_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The reviewer thinks the work raises a dual-use or safety concern. It opens a
+    #: safety check, ruled by a freshly drawn editor.
+    dual_use_concern: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    dual_use_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime] = _stamp()
 
     # The one thing an editor changes, once.
@@ -501,8 +505,15 @@ class AppealKind:
     EVALUATION = "evaluation"
     #: Authors against a CONTESTED status.
     STATUS = "status"
+    #: Opened automatically by a reviewer's dual-use concern. Upheld means the concern
+    #: is confirmed; overturned means it is cleared.
+    DUAL_USE = "dual_use"
+    #: Authors against a confirmed dual-use concern (target: the safety check).
+    SAFETY = "safety"
 
-    ALL = (DECISION, EVALUATION, STATUS)
+    ALL = (DECISION, EVALUATION, STATUS, SAFETY)
+    #: Filed by the system, never by a participant, and not counted against any editor.
+    SYSTEM = (DUAL_USE,)
 
 
 class AppealState:

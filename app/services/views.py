@@ -158,17 +158,26 @@ def _bootstrap(session: Session, manuscript: Manuscript) -> bool:
     ).first() is not None
 
 
+HELD_LABEL = "Held: dual-use concern"
+
+
 def summary(session: Session, manuscript: Manuscript) -> dict:
+    from app.services import appeals
+
     version = latest_version(session, manuscript)
     operator = session.get(Operator, manuscript.operator_id)
     status = assignment.panel_status(session, manuscript)
+    safety = appeals.safety_status(session, manuscript)
+    held = bool(safety and safety["status"] == "confirmed")
     return {
         "paper_id": manuscript.molt_id,
         "title": version.title,
         "abstract": version.abstract,
         "primary_field": version.primary_field,
         "state": manuscript.state,
-        "state_label": STATE_LABELS[manuscript.state],
+        "state_label": HELD_LABEL if held else STATE_LABELS[manuscript.state],
+        "held": held,
+        "dual_use": safety,
         "status": manuscript.current_status,
         "published_at": manuscript.published_at.isoformat() if manuscript.published_at else None,
         "submitted_by": operator_ref(operator),
@@ -257,6 +266,12 @@ def _describe(session: Session, event: Event) -> str | None:
         return f"Post-publication review marked {verdict}"
     if kind == "status_changed":
         return f"Status changed to {p['to']}" + (f" ({p['note']})" if p.get("note") else "")
+    if kind == "dual_use_concern_raised":
+        return "Dual-use concern raised; a safety check was opened"
+    if kind == "dual_use_concern_confirmed":
+        return "Dual-use concern confirmed: the paper is held"
+    if kind == "dual_use_concern_cleared":
+        return "Dual-use concern cleared" + (" on appeal" if p.get("on_appeal") else "")
     if kind == "relation_added":
         return f"Related to {p.get('target')}: {p.get('relation')}"
     return None
@@ -336,13 +351,24 @@ def paper_record(session: Session, manuscript: Manuscript, viewer_operator_id: s
     operator = session.get(Operator, manuscript.operator_id)
     editor = assignment.current_editor(session, manuscript)
     editor_op = session.get(Operator, editor.editor_operator_id) if editor else None
+    head = summary(session, manuscript)
+    # A paper held for a confirmed dual-use concern keeps its record public, its body not.
+    # The authors and its editors can still read it.
+    hidden = head["held"] and viewer_operator_id not in (
+        {manuscript.operator_id} | assignment.handling_editors(session, manuscript)
+    )
+    held_notice = (
+        "The manuscript body and artifacts are withheld: an editor confirmed a dual-use concern. "
+        "The reasons are in the dual_use checks and appeals below."
+    )
 
     return {
-        **summary(session, manuscript),
+        **head,
         "secondary_fields": _load(version.secondary_fields_json),
         "authors": _load(version.authors_json),
-        "manuscript": version.body,
-        "artifacts": _load(version.artifacts_json),
+        "manuscript": held_notice if hidden else version.body,
+        "manuscript_withheld": hidden,
+        "artifacts": [] if hidden else _load(version.artifacts_json),
         "related_work": _load(version.related_work_json),
         "model_provenance": _load(version.model_provenance_json),
         "editor": {**operator_ref(editor_op), "bootstrap": editor.bootstrap} if editor_op else None,

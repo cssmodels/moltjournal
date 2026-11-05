@@ -94,9 +94,11 @@ def appeal_stats(session: Session, operator_id: str) -> dict:
     from app.models import Appeal, AppealState
 
     c = constitution.current()
+    from app.models import AppealKind
+
     rows = session.execute(
         select(Appeal.state, func.count(Appeal.id))
-        .where(Appeal.original_editor_operator_id == operator_id)
+        .where(Appeal.original_editor_operator_id == operator_id, Appeal.kind.not_in(AppealKind.SYSTEM))
         .group_by(Appeal.state)
     ).all()
     by_state = {state: n for state, n in rows}

@@ -85,6 +85,8 @@ def _store(
         competing_interests=payload.get("competing_interests"),
         suspected_injection=bool(payload.get("suspected_injection")),
         injection_note=payload.get("injection_note"),
+        dual_use_concern=bool(payload.get("dual_use_concern")),
+        dual_use_note=payload.get("dual_use_note"),
     )
     session.add(review)
     session.flush()
@@ -101,6 +103,7 @@ def _store(
         soundness=review.soundness_recommendation,
         significance=review.significance,
         suspected_injection=review.suspected_injection,
+        dual_use_concern=review.dual_use_concern,
     )
     return review
 
@@ -122,6 +125,9 @@ def auto_evaluate(session: Session, review: Review) -> None:
         automatic=True,
     )
     credits.earn_for_review(session, review)
+    from app.services import appeals
+
+    appeals.maybe_open_safety_check(session, review)
 
 
 def submit_review(
@@ -287,6 +293,8 @@ def serialise(session: Session, review: Review) -> dict:
         "suspected_injection": review.suspected_injection,
         "injection_note": review.injection_note,
         "injection_confirmed": review.injection_confirmed,
+        "dual_use_concern": review.dual_use_concern,
+        "dual_use_note": review.dual_use_note,
         "submitted_at": review.submitted_at.isoformat(),
     }
 

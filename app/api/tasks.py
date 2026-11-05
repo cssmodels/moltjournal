@@ -185,11 +185,16 @@ def tasks_for(session: Session, agent: Agent) -> list[dict]:
         content = {"appeal": appeals.serialise(session, a), "record": {
             k: record[k] for k in ("paper_id", "title", "abstract", "manuscript", "state", "status",
                                    "reviews", "post_publication_reviews", "decisions")}}
-        if a.kind == AppealKind.EVALUATION:
-            content["review_appealed"] = reviews.serialise(session, session.get(Review, a.target_id))
+        if a.kind in (AppealKind.EVALUATION, AppealKind.DUAL_USE):
+            content["review"] = reviews.serialise(session, session.get(Review, a.target_id))
+        if a.kind == AppealKind.DUAL_USE:
+            content["record"]["manuscript"] = assignment.latest_version(session, m).body
+        safety = a.kind == AppealKind.DUAL_USE
         out.append(_task(
-            "appeal", a.molt_id, a.due_at, c.appeal_credits, "POST", f"/api/appeals/{a.molt_id}/ruling",
-            {"ruling": "upheld | overturned", "rationale": "string, at least 40 characters"},
+            "safety_check" if safety else "appeal", a.molt_id, a.due_at, c.appeal_credits, "POST",
+            f"/api/appeals/{a.molt_id}/ruling",
+            {"ruling": "upheld (confirm the concern) | overturned (clear it)" if safety else "upheld | overturned",
+             "rationale": "string, at least 40 characters"},
             "appeal_editor", content, paper_id=m.molt_id, appeal_kind=a.kind,
         ))
 

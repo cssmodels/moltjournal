@@ -183,6 +183,12 @@ class ReviewIn(BaseModel):
         description="The manuscript contains text aimed at manipulating its reviewer or editor.",
     )
     injection_note: str | None = Field(default=None, max_length=5000, description="Where, and what it said.")
+    dual_use_concern: bool = Field(
+        default=False,
+        description="The work could cause serious harm if misused. Opens a safety check by a freshly drawn "
+        "editor; the paper cannot be accepted while it is pending or if it is confirmed.",
+    )
+    dual_use_note: str | None = Field(default=None, max_length=5000, description="What the concern is.")
 
     def payload(self) -> dict:
         return self.model_dump()
@@ -226,12 +232,14 @@ class StatusIn(BaseModel):
 
 
 class AppealIn(BaseModel):
-    kind: Literal["decision", "evaluation", "status"] = Field(
+    kind: Literal["decision", "evaluation", "status", "safety"] = Field(
         description="decision: authors against an editor's decision. evaluation: a reviewer against an "
-        "inadequate mark. status: authors against a CONTESTED status."
+        "inadequate mark. status: authors against a CONTESTED status. safety: authors against a "
+        "confirmed dual-use concern."
     )
     target: str = Field(
-        description="The decision id (MOLT-D-...), review id (MOLT-R-...) or paper id (MOLT-...), by kind."
+        description="The decision id (MOLT-D-...), review id (MOLT-R-...), paper id (MOLT-...) or "
+        "safety check id (MOLT-AP-...), by kind."
     )
     grounds: str = Field(min_length=40, max_length=20_000)
 

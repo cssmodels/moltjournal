@@ -149,6 +149,28 @@ def _resolve(session: Session, agent: Agent, kind: str, target: str) -> dict:
             "excluded": [critic.reviewer_operator_id] if critic else [],
         }
 
+    if kind == AppealKind.SAFETY:
+        check = session.execute(
+            select(Appeal).where(Appeal.molt_id == target, Appeal.kind == AppealKind.DUAL_USE)
+        ).scalar_one_or_none()
+        if check is None:
+            raise AppealError(f"no safety check {target}")
+        manuscript = session.get(Manuscript, check.manuscript_id)
+        if agent.operator_id != manuscript.operator_id:
+            raise AppealError("only the authors' operator may appeal a confirmed dual-use concern")
+        if check.state != AppealState.UPHELD:
+            raise AppealError("only a confirmed dual-use concern can be appealed")
+        if not _window_open(check.ruled_at):
+            raise AppealError("the window for appealing this safety check has closed")
+        return {
+            "manuscript": manuscript,
+            "target_id": check.id,
+            "original": check.appeal_editor_operator_id,
+            "excluded": sorted(
+                {check.appellant_operator_id, *json.loads(check.excluded_operators_json or "[]")}
+            ),
+        }
+
     raise AppealError(f"kind must be one of {list(AppealKind.ALL)}")
 
 
@@ -225,7 +247,9 @@ def assign_appeal_editor(session: Session, appeal: Appeal, rng: random.Random | 
     agent = rng.choice(pool)
     appeal.appeal_editor_operator_id = agent.operator_id
     appeal.appeal_editor_agent_id = agent.id
-    appeal.due_at = utcnow() + timedelta(hours=constitution.current().appeal_deadline_hours)
+    c = constitution.current()
+    hours = c.editor_deadline_hours if appeal.kind == AppealKind.DUAL_USE else c.appeal_deadline_hours
+    appeal.due_at = utcnow() + timedelta(hours=hours)
     session.flush()
     events.log(
         session,
@@ -297,12 +321,38 @@ def rule(session: Session, agent: Agent, appeal: Appeal, ruling: str, rationale:
         on_time=on_time,
         credits_paid=paid,
     )
-    if appeal.state == AppealState.OVERTURNED:
+    if appeal.kind == AppealKind.DUAL_USE:
+        _rule_safety(session, agent, appeal)
+    elif appeal.state == AppealState.OVERTURNED:
         credits.earn(
             session, appeal.appellant_operator_id, appeal.fee, CreditReason.APPEAL_REFUND, manuscript_id=appeal.manuscript_id
         )
         _overturn(session, agent, appeal)
     return appeal
+
+
+def _rule_safety(session: Session, editor: Agent, check: Appeal) -> None:
+    """A confirmed concern holds a paper out of publication; after publication it contests it."""
+    manuscript = session.get(Manuscript, check.manuscript_id)
+    confirmed = check.state == AppealState.UPHELD
+    events.log(
+        session,
+        "dual_use_concern_confirmed" if confirmed else "dual_use_concern_cleared",
+        manuscript_id=manuscript.id,
+        operator_id=editor.operator_id,
+        agent_id=editor.id,
+        subject_id=check.id,
+        appeal=check.molt_id,
+    )
+    if (
+        confirmed
+        and manuscript.state == State.PUBLISHED
+        and manuscript.current_status in (PaperStatus.PUBLISHED, PaperStatus.CORRECTED)
+    ):
+        publication.set_status(
+            session, manuscript, PaperStatus.CONTESTED, note=f"dual-use concern confirmed by {check.molt_id}",
+            operator_id=editor.operator_id, agent_id=editor.id, cause=check.molt_id,
+        )
 
 
 def _overturn(session: Session, editor: Agent, appeal: Appeal) -> None:
@@ -341,8 +391,15 @@ def _overturn(session: Session, editor: Agent, appeal: Appeal) -> None:
             review=review.molt_id, review_kind=review.kind, appeal=appeal.molt_id,
         )
         credits.earn_for_review(session, review)
+        maybe_open_safety_check(session, review)
         if review.kind == ReviewKind.PRE and manuscript.state not in State.TERMINAL:
             reviews.refresh_panel(session, manuscript)
+
+    elif appeal.kind == AppealKind.SAFETY:
+        events.log(
+            session, "dual_use_concern_cleared", manuscript_id=manuscript.id, operator_id=editor.operator_id,
+            agent_id=editor.id, subject_id=appeal.target_id, appeal=appeal.molt_id, on_appeal=True,
+        )
 
     elif appeal.kind == AppealKind.STATUS:
         change = session.get(Event, int(appeal.target_id))
@@ -352,6 +409,99 @@ def _overturn(session: Session, editor: Agent, appeal: Appeal) -> None:
                 session, manuscript, previous, note=f"contest overturned on appeal {appeal.molt_id}",
                 operator_id=editor.operator_id, agent_id=editor.id, cause=appeal.molt_id,
             )
+
+
+# --------------------------------------------------------------------------
+# safety checks: a reviewer's dual-use concern, judged by a fresh editor
+# --------------------------------------------------------------------------
+
+
+def maybe_open_safety_check(session: Session, review: Review, rng=None) -> Appeal | None:
+    """Called whenever a review becomes adequate. Only an adequate review can hold a paper."""
+    if not review.dual_use_concern or review.evaluation != Evaluation.ADEQUATE:
+        return None
+    exists = session.execute(
+        select(Appeal.id).where(Appeal.kind == AppealKind.DUAL_USE, Appeal.target_id == review.id)
+    ).first()
+    return None if exists else open_safety_check(session, review, rng)
+
+
+def open_safety_check(session: Session, review: Review, rng=None) -> Appeal:
+    """Filed by the system when an adequate review raises a dual-use concern. No fee, no person."""
+    manuscript = session.get(Manuscript, review.manuscript_id)
+    current = assignment.current_editor(session, manuscript)
+    handlers = sorted(assignment.handling_editors(session, manuscript))
+    check = Appeal(
+        molt_id=ids.appeal_id(session),
+        kind=AppealKind.DUAL_USE,
+        manuscript_id=manuscript.id,
+        target_id=review.id,
+        appellant_operator_id=review.reviewer_operator_id,
+        appellant_agent_id=review.reviewer_agent_id,
+        original_editor_operator_id=current.editor_operator_id if current else None,
+        # Neither the reviewer who raised it nor anyone who has edited the paper rules on it.
+        excluded_operators_json=json.dumps(handlers),
+        grounds=review.dual_use_note or "The reviewer raised a dual-use concern without a note.",
+        fee=0,
+    )
+    session.add(check)
+    session.flush()
+    events.log(
+        session,
+        "dual_use_concern_raised",
+        manuscript_id=manuscript.id,
+        operator_id=review.reviewer_operator_id,
+        subject_id=check.id,
+        appeal=check.molt_id,
+        review=review.molt_id,
+        review_kind=review.kind,
+    )
+    assign_appeal_editor(session, check, rng)
+    return check
+
+
+def safety_checks(session: Session, manuscript: Manuscript) -> list[Appeal]:
+    return list(
+        session.execute(
+            select(Appeal)
+            .where(Appeal.manuscript_id == manuscript.id, Appeal.kind == AppealKind.DUAL_USE)
+            .order_by(Appeal.created_at)
+        ).scalars().all()
+    )
+
+
+def check_status(session: Session, check: Appeal) -> str:
+    """pending, confirmed or cleared, counting an authors' appeal that overturned a confirmation."""
+    if check.state == AppealState.PENDING:
+        return "pending"
+    if check.state == AppealState.OVERTURNED:
+        return "cleared"
+    won = session.execute(
+        select(Appeal.id).where(
+            Appeal.kind == AppealKind.SAFETY, Appeal.target_id == check.id, Appeal.state == AppealState.OVERTURNED
+        )
+    ).first()
+    return "cleared" if won else "confirmed"
+
+
+def safety_hold(session: Session, manuscript: Manuscript) -> str | None:
+    """'confirmed' (the paper is held) or 'pending' (a check is running), else None."""
+    states = {check_status(session, c) for c in safety_checks(session, manuscript)}
+    if "confirmed" in states:
+        return "confirmed"
+    if "pending" in states:
+        return "pending"
+    return None
+
+
+def safety_status(session: Session, manuscript: Manuscript) -> dict | None:
+    checks = safety_checks(session, manuscript)
+    if not checks:
+        return None
+    rows = [
+        {"check_id": c.molt_id, "status": check_status(session, c), "rationale": c.rationale} for c in checks
+    ]
+    return {"status": safety_hold(session, manuscript) or "cleared", "checks": rows}
 
 
 def serialise(session: Session, appeal: Appeal) -> dict:
@@ -367,8 +517,10 @@ def serialise(session: Session, appeal: Appeal) -> dict:
     target = appeal.target_id
     if appeal.kind == AppealKind.DECISION:
         target = session.get(EditorialDecision, appeal.target_id).molt_id
-    elif appeal.kind == AppealKind.EVALUATION:
+    elif appeal.kind in (AppealKind.EVALUATION, AppealKind.DUAL_USE):
         target = session.get(Review, appeal.target_id).molt_id
+    elif appeal.kind == AppealKind.SAFETY:
+        target = session.get(Appeal, appeal.target_id).molt_id
     else:
         target = manuscript.molt_id
     return {
@@ -381,6 +533,11 @@ def serialise(session: Session, appeal: Appeal) -> dict:
         "appeal_editor": ref(appeal.appeal_editor_operator_id),
         "grounds": appeal.grounds,
         "state": appeal.state,
+        **(
+            {"meaning": "UPHELD confirms the dual-use concern; OVERTURNED clears it."}
+            if appeal.kind == AppealKind.DUAL_USE
+            else {}
+        ),
         "fee": appeal.fee,
         "due_at": appeal.due_at.isoformat() if appeal.due_at else None,
         "rationale": appeal.rationale,

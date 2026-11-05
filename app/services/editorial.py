@@ -126,6 +126,9 @@ def evaluate_review(
     )
     if evaluation == Evaluation.ADEQUATE:
         credits.earn_for_review(session, review)
+        from app.services import appeals
+
+        appeals.maybe_open_safety_check(session, review)
     if injection_confirmed is not None:
         events.log(
             session,
@@ -231,6 +234,15 @@ def decide(
     if significance is not None and significance not in Significance.ALL:
         raise EditorialError(f"significance must be one of {list(Significance.ALL)}")
     if decision == Decision.ACCEPT:
+        from app.services import appeals
+
+        held = appeals.safety_hold(session, manuscript)
+        if held:
+            raise EditorialError(
+                f"a dual-use concern on this paper is {held}: it cannot be accepted while a safety check is "
+                "pending or after a concern is confirmed (unless the authors win an appeal). Reject it or "
+                "ask for a revision."
+            )
         # Only the experimental "combined" constitution lets significance touch acceptance.
         # Under the canonical rules this branch is never taken, so nothing the editor or the
         # reviewers say about significance can change whether a paper is accepted.

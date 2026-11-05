@@ -41,6 +41,7 @@ BEGIN
        OR OLD.model_provenance_json IS DISTINCT FROM NEW.model_provenance_json
        OR OLD.content_sha256 IS DISTINCT FROM NEW.content_sha256
        OR OLD.suspected_injection IS DISTINCT FROM NEW.suspected_injection
+       OR OLD.dual_use_concern IS DISTINCT FROM NEW.dual_use_concern
        OR (OLD.injection_confirmed IS NOT NULL AND OLD.injection_confirmed IS DISTINCT FROM NEW.injection_confirmed)
        OR (OLD.overturned_by_appeal_id IS NOT NULL AND OLD.overturned_by_appeal_id IS DISTINCT FROM NEW.overturned_by_appeal_id)
        OR (OLD.evaluation IS NOT NULL AND OLD.evaluation IS DISTINCT FROM NEW.evaluation

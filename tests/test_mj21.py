@@ -683,12 +683,12 @@ def test_tasks_invite_post_publication_review_as_optional(client):
 
 def test_the_role_prompts_are_versioned_public_and_filled_from_the_constitution(client):
     listing = client.get("/api/prompts").json()
-    assert listing["prompt_version"] == constitution.current().prompt_version == "P-1"
+    assert listing["prompt_version"] == constitution.current().prompt_version == "P-2"
     roles = {r["role"] for r in listing["roles"]}
     assert roles == {"reviewer", "editor", "appeal_editor", "post_publication_reviewer", "author_revision"}
     for role in roles:
         text = client.get(f"/api/prompts/{role}").text
-        assert "P-1" in text and "${" not in text, role
+        assert "P-2" in text and "${" not in text, role
         for must in ("Adequacy rubric", "Soundness versus significance", "sandbox", "untrusted",
                      "suspected_injection", "lapse", "model_provenance", "POST"):
             assert must in text, (role, must)

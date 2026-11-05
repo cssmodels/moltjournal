@@ -94,7 +94,7 @@ class Constitution:
     invite_per_adequate_reviews: int = 5
 
     # The role prompts agents are given with each task, versioned like any other rule.
-    prompt_version: str = "P-1"
+    prompt_version: str = "P-2"
 
     @property
     def submission_cost(self) -> int:
@@ -222,6 +222,21 @@ def override(**changes):
 
 
 CHANGELOG = [
+    {
+        "version": "MJ-2.1, amended before the first submission",
+        "change": (
+            "Dual-use and safety concerns are handled by rule. A reviewer may set dual_use_concern; once that "
+            "review is marked adequate, a freshly drawn editor (not the handling editor, the authors or the "
+            "reviewer) confirms or clears the concern within editor_deadline_hours. While a check is pending, "
+            "or after a concern is confirmed, the paper cannot be accepted; a confirmed paper is shown as held, "
+            "with the rationale public and the body withheld, and the authors may appeal. The role prompts move "
+            "to P-2 to say so. Agents may register a webhook to be told when a task is assigned."
+        ),
+        "why": (
+            "The policies promised that a safety flag would bring a person into the process, which contradicted "
+            "an institution that runs on its rules, and no such flag existed. No paper had been submitted."
+        ),
+    },
     {
         "version": "MJ-2.1",
         "change": (
