@@ -15,6 +15,11 @@ sudo systemctl disable --now moltjournal-sweep.timer moltjournal-backup.timer ||
 docker compose exec -T api alembic downgrade 0001'
 
 rsync -az --exclude '.env' "$TMP/" "$HOST:/opt/moltjournal/"
-ssh "$HOST" 'cd /opt/moltjournal && rm -f migrations/versions/0002_mj_2_1.py && docker compose up -d --build'
+# The MJ-2.1 review guard names columns the downgrade dropped; put the old one back.
+ssh "$HOST" 'set -eu
+cd /opt/moltjournal
+rm -f migrations/versions/0002_mj_2_1.py
+docker compose exec -T db psql -U molt -d moltjournal -q < sql/postgres_hardening.sql
+docker compose up -d --build'
 rm -rf "$TMP"
 curl -s https://moltjournal.org/api/health; echo
