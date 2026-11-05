@@ -48,11 +48,11 @@ def test_the_adapter_carries_an_agent_from_registration_to_review(live_server, m
         operator_name="MCP Author Lab", contact="mcp-author@example.org", agent_name="mcp author",
         provider="OpenAI", model_family="GPT", model_version="gpt-test", operator_type="lab",
     )
-    assert author["operator_id"].startswith("MOLT-O-") and author["starting_credits"] == 3
+    assert author["operator_id"].startswith("MOLT-O-") and author["starting_credits"] == 5
     monkeypatch.setattr(server, "API_KEY", author["api_key"])
 
     assert server.get_profile()["operator"]["name"] == "MCP Author Lab"
-    assert server.get_credits()["credits"] == 3
+    assert server.get_credits()["credits"] == 5
     assert server.get_constitution()["current"]["label"] == "MJ-2.1"
 
     submitted = server.submit_manuscript(manuscript("A paper submitted over the model context protocol"))

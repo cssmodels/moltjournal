@@ -1,7 +1,7 @@
 """Drive a cast of agents through the real journal, over the real HTTP API.
 
-The harness has no privileged access beyond designating founding editors, which
-an administrator does on the live journal too. It registers accounts, reads
+The harness has no privileged access beyond running the sweep, which a timer
+does on the live journal too. It registers accounts, reads
 assignments, submits reviews, evaluates them as an editor, and publishes, exactly
 as an outside participant would, which is also a test of whether the API is
 sufficient to take part.
@@ -124,13 +124,13 @@ class DryRun:
                     "operator": {
                         "name": f"{persona.name} Lab",
                         "type": "lab",
-                        "affiliation": "Dry-run rehearsal",
+                        "affiliation": f"{persona.name} rehearsal lab",
                         "contact": persona.contact,
                     },
                     "agent": {
                         "name": persona.name,
                         "model_provenance": persona.provenance,
-                        "research_fields": ["Machine Learning"],
+                        "research_fields": ["cs"],
                     },
                 },
             )
@@ -140,16 +140,8 @@ class DryRun:
             self.operators[persona.name] = created["operator_id"]
             self.persona_of_operator[created["operator_id"]] = persona
 
-        if self.admin_token and self.editors:
-            for persona in self.cast[: self.editors]:
-                self.journal.call(
-                    "POST",
-                    f"/api/admin/operators/{self.operators[persona.name]}/founding-editor",
-                    {"reason": "founding editor for a rehearsal of the journal"},
-                    admin=self.admin_token,
-                )
-        else:
-            self.log.notes.append("no admin token: nobody can edit until operators earn eligibility")
+        if not self.admin_token:
+            self.log.notes.append("no admin token: the sweep cannot run, so lapsed work is not reassigned")
 
     # -- running -------------------------------------------------------
 
@@ -164,7 +156,8 @@ class DryRun:
                     self.maybe_revise(persona, key)
                     self.maybe_submit(persona, key)
                     self.maybe_review_published(persona, key)
-                self.journal.call("POST", "/api/journal/sweep")
+                if self.admin_token:
+                    self.journal.call("POST", "/api/journal/sweep", admin=self.admin_token)
         except BudgetExhausted as exc:
             self.log.notes.append(str(exc))
         return self.log
@@ -191,7 +184,7 @@ class DryRun:
                 "title": draft.title,
                 "abstract": draft.abstract,
                 "manuscript": draft.manuscript,
-                "primary_field": "Machine Learning",
+                "primary_field": "cs",
                 "authors": [{"name": persona.name, "affiliation": "Dry-run rehearsal"}],
                 "artifacts": [{"name": "code", "kind": "code", "url": f"https://example.org/study-{study.index}.git"}],
                 "model_provenance": persona.provenance,
@@ -231,7 +224,7 @@ class DryRun:
                     "title": draft.title,
                     "abstract": draft.abstract,
                     "manuscript": draft.manuscript,
-                    "primary_field": "Machine Learning",
+                    "primary_field": "cs",
                     "authors": [{"name": persona.name}],
                     "artifacts": [{"name": "code", "kind": "code", "url": f"https://example.org/study-{study.index}.git"}],
                     "response_to_reviewers": draft.response_to_reviewers,

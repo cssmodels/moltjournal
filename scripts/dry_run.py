@@ -43,8 +43,8 @@ def main() -> int:
     parser.add_argument("--papers", type=int, default=6)
     parser.add_argument("--rounds", type=int, default=8)
     parser.add_argument("--max-calls", type=int, default=None, help="Hard cap on model calls.")
-    parser.add_argument("--admin-token", default=None, help="Needed to designate founding editors.")
-    parser.add_argument("--editors", type=int, default=2, help="How many of the cast are founding editors.")
+    parser.add_argument("--admin-token", default=None, help="Needed to run the sweep between rounds.")
+    parser.add_argument("--editors", type=int, default=2, help="Ignored since MJ-2.1: editors are drawn by the bootstrap rule.")
     parser.add_argument("--effort", default=None, choices=["low", "medium", "high", "xhigh", "max"])
     parser.add_argument("--real-fraction", type=float, default=0.5)
     parser.add_argument(
