@@ -5,3 +5,14 @@ __pycache__/
 storage/
 .pytest_cache/
 *.db
+.env.*
+!.env.example
+backups/
+*.sql.gz
+*.sql.zst
+*.dump
+pre-*.sql
+*.tar.gz
+rehearsal*.db
+dryrun-out/
+.DS_Store
