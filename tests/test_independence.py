@@ -22,11 +22,14 @@ def test_a_panel_never_contains_two_reviewers_from_one_operator(client):
     ).json()
     twin_headers = {"X-API-Key": twin["api_key"]}
     pid = j.submit()
-    seats = []
-    for p in j.reviewers:
-        seats += [p.operator_id for a in assignments(client, p) if a["paper_id"] == pid]
-    seats += [j.reviewers[0].operator_id for a in client.get("/api/review-assignments", headers=twin_headers).json() if a["paper_id"] == pid]
-    assert len(seats) == 3 and len(set(seats)) == 3
+    seats = {}
+    for p in j.everyone:
+        seats.update({a["assignment_id"]: p.operator_id for a in assignments(client, p) if a["paper_id"] == pid})
+    # The twin sees its operator's assignments, and adds no seat of its own.
+    for a in client.get("/api/review-assignments", headers=twin_headers).json():
+        if a["paper_id"] == pid:
+            assert a["assignment_id"] in seats
+    assert len(seats) == 3 and len(set(seats.values())) == 3
 
 
 def test_reviewers_come_from_different_model_families_when_the_pool_allows_it(client):
@@ -40,16 +43,14 @@ def test_reviewers_come_from_different_model_families_when_the_pool_allows_it(cl
         j.decide(pid, "reject", significance=None)
         # the author needs credits for the next submission
         from tests.helpers import grant
-        grant(j.author, 3)
+        grant(j.author, 5)
 
 
 def test_when_families_run_out_diversity_is_best_effort_not_a_deadlock(client):
-    editor = register(client, "Editor Lab", 0)
-    from tests.helpers import make_editor
-    make_editor(client, editor)
     author = register(client, "Author Lab", 1)
-    # Three reviewers, all the same family: diversity is impossible, review must still happen.
-    same = [register(client, f"Clone Lab {i}", 2) for i in range(3)]
+    # Four operators, all the same family: one edits, three review. Diversity is
+    # impossible, review must still happen.
+    same = [register(client, f"Clone Lab {i}", 2) for i in range(4)]
     pid = client.post("/api/manuscripts", json=manuscript(), headers=author.headers).json()["paper_id"]
     got = [a for p in same for a in assignments(client, p) if a["paper_id"] == pid]
     assert len(got) == 3
@@ -57,11 +58,8 @@ def test_when_families_run_out_diversity_is_best_effort_not_a_deadlock(client):
 
 def test_with_model_diversity_off_family_is_ignored(client):
     with constitution.override(model_diversity=False):
-        editor = register(client, "Editor Lab", 0)
-        from tests.helpers import make_editor
-        make_editor(client, editor)
         author = register(client, "Author Lab", 1)
-        same = [register(client, f"Clone Lab {i}", 2) for i in range(3)]
+        same = [register(client, f"Clone Lab {i}", 2) for i in range(4)]
         pid = client.post("/api/manuscripts", json=manuscript(), headers=author.headers).json()["paper_id"]
         assert sum(1 for p in same for a in assignments(client, p) if a["paper_id"] == pid) == 3
 
@@ -70,7 +68,7 @@ def test_authors_and_the_editor_never_review_their_own_paper(client):
     j = Journal(client, reviewers=4)
     pid = j.submit()
     assert [a for a in assignments(client, j.author) if a["paper_id"] == pid] == []
-    assert [a for a in assignments(client, j.editor) if a["paper_id"] == pid] == []
+    assert [a for a in assignments(client, j.editor_of(pid)) if a["paper_id"] == pid] == []
 
 
 def test_reviews_are_sealed_until_the_panel_is_complete(client):
@@ -81,7 +79,7 @@ def test_reviews_are_sealed_until_the_panel_is_complete(client):
     assert do_review(client, p1, a1).status_code == 201
 
     # The editor cannot read an incomplete panel, and neither can the public or the author.
-    editor_view = client.get(f"/api/editor/manuscripts/{pid}", headers=j.editor.headers).json()
+    editor_view = client.get(f"/api/editor/manuscripts/{pid}", headers=j.editor_of(pid).headers).json()
     assert editor_view["reviews"] == []
     assert paper(client, pid)["reviews"] == []
     assert paper(client, pid, j.author)["reviews"] == []
@@ -96,7 +94,7 @@ def test_reviews_are_sealed_until_the_panel_is_complete(client):
     do_review(client, p3, a3)
 
     # Complete: the editor and the panel may read all three; the author and the public still may not.
-    assert len(client.get(f"/api/editor/manuscripts/{pid}", headers=j.editor.headers).json()["reviews"]) == 3
+    assert len(client.get(f"/api/editor/manuscripts/{pid}", headers=j.editor_of(pid).headers).json()["reviews"]) == 3
     assert len(paper(client, pid, p1)["reviews"]) == 3
     assert paper(client, pid)["reviews"] == []
     assert paper(client, pid, j.author)["reviews"] == []
@@ -120,14 +118,13 @@ def test_a_review_must_say_which_model_actually_wrote_it(client):
 
     body["model_provenance"] = {"provider": "Anthropic", "model_family": " CLAUDE ", "model_version": "a different model than declared"}
     assert client.post("/api/reviews", json=body, headers=p.headers).status_code == 201
-    review = client.get(f"/api/editor/manuscripts/{pid}", headers=j.editor.headers)
-    # recorded per act, and families are compared case-insensitively
+    # recorded per act, and families are mapped onto the controlled vocabulary
     from sqlalchemy import select
     from app.db import SessionLocal
     from app.models import Review
     with SessionLocal() as s:
         row = s.execute(select(Review)).scalars().first()
-        assert row.model_family == "claude"
+        assert row.model_family == "Claude"
 
 
 def test_nobody_can_act_on_somebody_elses_assignment(client):
@@ -144,11 +141,12 @@ def test_a_copied_review_is_filed_and_then_shows_up_as_inadequate_on_its_operato
     """Bouncing it would hide the behaviour the editor exists to catch."""
     from tests.helpers import grant
 
-    j = Journal(client, reviewers=3)  # exactly three operators, so each sits on both papers
+    j = Journal(client, reviewers=3)
     first = j.submit("A first paper about how institutions allocate scarce reviewing attention")
-    grant(j.author, 3)
+    grant(j.author, 5)
     second = j.submit("A second paper about how institutions allocate scarce reviewing attention")
-    spammer = j.reviewers[0]
+    on = lambda p, pid: any(a["paper_id"] == pid for a in assignments(client, p))  # noqa: E731
+    spammer = next(p for p in j.everyone if on(p, first) and on(p, second))
     body = review_body(spammer, seed="same text")
     for pid in (first, second):
         a = next(a for a in assignments(client, spammer) if a["paper_id"] == pid)
@@ -157,9 +155,9 @@ def test_a_copied_review_is_filed_and_then_shows_up_as_inadequate_on_its_operato
     for pid in (first, second):
         j.review_all(pid)  # everyone else files their own
     # The editor marks the copy on the second paper inadequate.
-    detail = client.get(f"/api/editor/manuscripts/{second}", headers=j.editor.headers).json()
+    detail = client.get(f"/api/editor/manuscripts/{second}", headers=j.editor_of(second).headers).json()
     for r in detail["reviews"]:
         verdict = "inadequate" if r["reviewer"]["operator_id"] == spammer.operator_id else "adequate"
-        client.post(f"/api/editor/reviews/{r['review_id']}/evaluation", json={"evaluation": verdict, "note": "copied from another paper"}, headers=j.editor.headers)
+        client.post(f"/api/editor/reviews/{r['review_id']}/evaluation", json={"evaluation": verdict, "note": "copied from another paper"}, headers=j.editor_of(second).headers)
     record = client.get(f"/api/operators/{spammer.operator_id}").json()
     assert record["review_activity"]["inadequate"] == 1, "the bad review is on the record, not bounced"

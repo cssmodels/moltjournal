@@ -44,13 +44,14 @@ def register(client, name: str, family_index: int = 0, **operator) -> Participan
             "operator": {
                 "name": name,
                 "type": operator.get("type", "lab"),
-                "affiliation": operator.get("affiliation", "Test University"),
+                # Distinct by default: a shared affiliation is a conflict of interest.
+                "affiliation": operator.get("affiliation", f"{name} Institute"),
                 "contact": f"{name.lower().replace(' ', '.')}@example.org",
             },
             "agent": {
                 "name": f"{name} agent",
                 "model_provenance": provenance,
-                "research_fields": operator.get("fields", ["Computational Social Science"]),
+                "research_fields": operator.get("fields", ["cs"]),
             },
         },
     )
@@ -65,8 +66,8 @@ def manuscript(title: str = "Charging for review changes what gets published", *
         "abstract": "We measure how a review-credit requirement changes acceptance, and report the "
         "size and stability of the effect across specifications.",
         "manuscript": MANUSCRIPT_BODY + f"\n\n(Title: {title})",
-        "primary_field": "Computational Social Science",
-        "secondary_fields": ["Machine Learning"],
+        "primary_field": "cs",
+        "secondary_fields": ["stat"],
         "authors": [{"name": "A. Researcher", "affiliation": "Test University"}],
         "artifacts": [{"name": "analysis", "kind": "code", "url": "https://example.org/analysis.git"}],
         "related_work": ["doi:10.1000/example"],
@@ -105,10 +106,43 @@ def admin(client, method, path, **kw):
     return client.request(method, path, headers={"X-Admin-Token": "test-admin-token"}, **kw)
 
 
-def make_editor(client, p: Participant):
-    r = admin(client, "POST", f"/api/admin/operators/{p.operator_id}/founding-editor",
-              json={"reason": "bootstrapping the test journal"})
+def sweep(client) -> dict:
+    r = admin(client, "POST", "/api/journal/sweep")
     assert r.status_code == 200, r.text
+    return r.json()
+
+
+def db(fn):
+    """Run fn(session) against the test database and commit. For arranging a scenario."""
+    from app.db import SessionLocal
+
+    with SessionLocal() as s:
+        out = fn(s)
+        s.commit()
+        return out
+
+
+def operator_row(s, p: "Participant"):
+    from sqlalchemy import select
+
+    from app.models import Operator
+
+    return s.execute(select(Operator).where(Operator.molt_id == p.operator_id)).scalar_one()
+
+
+def backdate(model, molt_id: str, column: str = "due_at", hours: float = 1) -> None:
+    """Move a deadline into the past, as if the clock had run out."""
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
+    from app.models import utcnow
+
+    def go(s):
+        row = s.execute(select(model).where(model.molt_id == molt_id)).scalar_one()
+        setattr(row, column, utcnow() - timedelta(hours=hours))
+
+    db(go)
 
 
 def credits(client, p: Participant) -> int:
@@ -120,21 +154,23 @@ def paper(client, molt_id: str, p: Participant | None = None) -> dict:
 
 
 class Journal:
-    """A populated journal: one editor, an author, and several reviewers of different families."""
+    """A populated journal: an author and several other operators of different families.
+
+    Nobody is designated editor. On a fresh journal nobody has a review record, so the
+    cold-start bootstrap rule draws the editor from everyone but the authors; ask
+    `editor_of(paper)` who it was.
+    """
 
     def __init__(self, client, reviewers: int = 5):
         self.client = client
         self.editor = register(client, "Editor Lab", 0)
-        make_editor(client, self.editor)
         self.author = register(client, "Author Lab", 1)
         self.reviewers = [register(client, f"Reviewer Lab {i}", i + 2) for i in range(reviewers)]
         self.extra: list[Participant] = []
 
-    def add(self, name: str, family_index: int = 0, editor: bool = False) -> Participant:
+    def add(self, name: str, family_index: int = 0, **operator) -> Participant:
         """Another participant. Everyone is tracked so panels can be completed whoever is drawn."""
-        p = register(self.client, name, family_index)
-        if editor:
-            make_editor(self.client, p)
+        p = register(self.client, name, family_index, **operator)
         self.extra.append(p)
         return p
 
@@ -223,7 +259,7 @@ def process(j: "Journal", verdicts: dict[str, list[str]] | None = None, decision
     """
     verdicts = verdicts if verdicts is not None else {}  # consumed in place, across papers
     _counter["n"] += 1
-    grant(j.author, 3)
+    grant(j.author, 5)
     pid = j.submit(f"Study {_counter['n']} of how institutions allocate scarce reviewing attention")
     # Somebody who has earned editorial standing may be drawn as editor, so ask who it is.
     editor = j.editor_of(pid)

@@ -4,7 +4,7 @@ import pytest
 
 from app import constitution
 from tests.helpers import (
-    Journal, admin, assignments, do_review, grant, make_editor, manuscript, paper, process, register,
+    Journal, admin, assignments, do_review, grant, manuscript, paper, process, register, sweep,
 )
 
 
@@ -12,8 +12,8 @@ def test_nobody_but_the_editor_can_evaluate_or_decide(client):
     j = Journal(client)
     pid = j.submit()
     j.review_all(pid)
-    r = client.get(f"/api/editor/manuscripts/{pid}", headers=j.editor.headers).json()["reviews"][0]
-    stranger = j.reviewers[0]
+    r = client.get(f"/api/editor/manuscripts/{pid}", headers=j.editor_of(pid).headers).json()["reviews"][0]
+    stranger = next(p for p in j.everyone if p.operator_id not in (j.editor_of(pid).operator_id, j.author.operator_id))
     assert client.post(f"/api/editor/reviews/{r['review_id']}/evaluation", json={"evaluation": "adequate"}, headers=stranger.headers).status_code == 409
     assert client.get(f"/api/editor/manuscripts/{pid}", headers=stranger.headers).status_code == 404
     assert client.post(f"/api/editor/manuscripts/{pid}/decision", json={"decision": "reject", "rationale": "x" * 50}, headers=j.author.headers).status_code == 404
@@ -27,15 +27,14 @@ def test_a_decision_needs_every_review_evaluated_first(client):
     assert early.status_code == 409 and "adequate reviews" in early.json()["detail"]
 
 
-def test_no_editor_is_available_until_somebody_qualifies(client):
-    # Nobody has a review record and nobody has been designated: the paper waits.
+def test_a_lone_author_waits_until_somebody_else_exists(client):
+    # Nobody but the authors: no editor can be drawn, and the paper waits for the sweep.
     author = register(client, "Author Lab", 0)
-    reviewers = [register(client, f"Reviewer {i}", i + 1) for i in range(3)]
     pid = client.post("/api/manuscripts", json=manuscript(), headers=author.headers).json()["paper_id"]
     assert client.get(f"/api/manuscripts/{pid}", headers=author.headers).json()["state"] == "SUBMITTED"
-    # A founding editor is designated; the sweep picks the paper up.
-    make_editor(client, register(client, "Founding Editor", 4))
-    assert client.post("/api/journal/sweep").json()["editors_assigned"] == 1
+    for i in range(4):
+        register(client, f"Newcomer {i}", i + 1)
+    assert sweep(client)["editors_assigned"] == 1
     assert client.get(f"/api/manuscripts/{pid}", headers=author.headers).json()["state"] == "REVIEWERS_ASSIGNED"
 
 
@@ -57,7 +56,8 @@ def test_editorial_standing_comes_from_a_record_of_adequate_reviews(client):
 
         record = client.get(f"/api/operators/{keen.operator_id}").json()
         assert record["editor_eligibility"]["eligible"]
-        assert record["editor_eligibility"]["fields"] == ["Computational Social Science"]
+        assert set(record["editor_eligibility"]["fields"]) <= {"cs", "stat"}
+        assert record["editor_eligibility"]["fields"]
         assert record["review_activity"]["adequacy_rate"] == 1.0
 
 
@@ -135,7 +135,7 @@ def test_an_invalid_significance_value_is_refused_rather_than_ignored(client):
     pid = j.submit()
     j.review_all(pid)
     j.evaluate_all(pid)
-    r = client.post(f"/api/editor/manuscripts/{pid}/decision", json={"decision": "accept", "rationale": "x" * 50, "significance": "enormous"}, headers=j.editor.headers)
+    r = client.post(f"/api/editor/manuscripts/{pid}/decision", json={"decision": "accept", "rationale": "x" * 50, "significance": "enormous"}, headers=j.editor_of(pid).headers)
     assert r.status_code == 422
 
 
@@ -147,7 +147,7 @@ def test_the_final_decision_allows_only_accept_or_reject(client):
         j.evaluate_all(pid)
         r = j.decide(pid, "major_revision", significance=None)
         assert r.status_code == 409 and "accept or reject" in r.json()["detail"]
-        assert client.get("/api/editor/assignments", headers=j.editor.headers).json()["manuscripts"][0]["terminal_decision_required"]
+        assert client.get("/api/editor/assignments", headers=j.editor_of(pid).headers).json()["manuscripts"][0]["terminal_decision_required"]
 
 
 def test_minor_revisions_cannot_loop_for_ever(client):
@@ -171,25 +171,21 @@ def test_minor_revisions_cannot_loop_for_ever(client):
 
 def test_an_editor_can_step_aside_and_another_is_drawn(client):
     j = Journal(client)
-    second = j.add("Second Editor", 4, editor=True)
     pid = j.submit()
-    mine = client.get("/api/editor/assignments", headers=j.editor.headers).json()["manuscripts"]
-    theirs = client.get("/api/editor/assignments", headers=second.headers).json()["manuscripts"]
-    holder, other = (j.editor, second) if mine else (second, j.editor)
-    item = (mine or theirs)[0]
+    holder = j.editor_of(pid)
+    item = client.get("/api/editor/assignments", headers=holder.headers).json()["manuscripts"][0]
     assert client.post(f"/api/editor/assignments/{item['editor_assignment_id']}/decline", headers=holder.headers).status_code == 200
+    other = j.editor_of(pid)
+    assert other.operator_id != holder.operator_id
     now = client.get("/api/editor/assignments", headers=other.headers).json()["manuscripts"]
     assert [m["paper_id"] for m in now] == [pid]
 
 
 def test_two_operators_cannot_take_turns_editing_each_other(client):
     # B edits A's paper; afterwards A may not edit B's.
+    # Only two operators, so B is the only possible editor of A's paper.
     a = register(client, "Lab A", 0)
     b = register(client, "Lab B", 1)
-    make_editor(client, a)
-    make_editor(client, b)
-    for n in range(3):
-        register(client, f"Reviewer {n}", n + 2)
     first = client.post("/api/manuscripts", json=manuscript("A's paper on how institutions share scarce attention"), headers=a.headers).json()["paper_id"]
     assert [m["paper_id"] for m in client.get("/api/editor/assignments", headers=b.headers).json()["manuscripts"]] == [first]
     second = client.post("/api/manuscripts", json=manuscript("B's paper on whether scarce attention can be priced in credits"), headers=b.headers).json()["paper_id"]

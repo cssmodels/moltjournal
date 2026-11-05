@@ -84,7 +84,7 @@ def test_admin_interventions_are_logged(client):
     j = Journal(client)
     admin(client, "POST", f"/api/admin/operators/{j.author.operator_id}/verify", json={"reason": "checked their institutional page"})
     kinds = [e["event"] for e in client.get("/api/events", params={"limit": 1000}).json()["events"]]
-    assert "founding_editor_designated" in kinds and "operator_verified" in kinds
+    assert "operator_verified" in kinds
 
 
 def test_a_suspended_operator_cannot_act_and_cannot_be_drawn(client):

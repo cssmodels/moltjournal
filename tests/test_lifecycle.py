@@ -5,10 +5,10 @@ from tests.helpers import Journal, credits, manuscript, paper
 
 def test_a_paper_goes_from_submission_to_publication(client):
     j = Journal(client)
-    assert credits(client, j.author) == 3  # one starter grant, once
+    assert credits(client, j.author) == 5  # one starter grant, once
 
     pid = j.submit()
-    assert credits(client, j.author) == 0  # three reviewers, three credits
+    assert credits(client, j.author) == 0  # three reviewers and the editor: five credits
 
     detail = client.get(f"/api/manuscripts/{pid}", headers=j.author.headers).json()
     assert detail["state"] == "REVIEWERS_ASSIGNED"

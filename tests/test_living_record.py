@@ -2,7 +2,7 @@
 
 from app import constitution
 from tests.helpers import (
-    Journal, credits, grant, make_editor, manuscript, paper, process, register, review_body,
+    Journal, credits, grant, manuscript, paper, process, register, review_body,
 )
 
 
@@ -96,34 +96,24 @@ def test_an_inadequate_criticism_cannot_contest_a_paper(client):
     assert paper(client, pid)["status"] == "PUBLISHED"
 
 
-def test_the_evaluator_is_neither_an_author_nor_the_critic(client):
+def test_the_evaluator_is_neither_an_author_nor_the_critic_nor_the_accepting_editor(client):
     j = Journal(client)
-    j.add("Second Editor", 4, editor=True)
     pid = j.publish()
-    rid = post_review(client, pid, j.reviewers[0], seed="evaluator").json()["review_id"]
+    accepting = j.editor_of(pid)
+    critic = next(p for p in j.everyone if p.operator_id not in (j.author.operator_id, accepting.operator_id))
+    rid = post_review(client, pid, critic, seed="evaluator").json()["review_id"]
     editor = evaluator_for(client, j, rid)
-    assert editor.operator_id not in (j.author.operator_id, j.reviewers[0].operator_id)
+    assert editor.operator_id not in (j.author.operator_id, critic.operator_id, accepting.operator_id)
 
 
-def test_status_changes_follow_the_allowed_flow_and_are_made_by_editors(client):
+def test_nobody_sets_a_status_by_hand_not_even_the_papers_editor(client):
     j = Journal(client)
     pid = j.publish()
     url = f"/api/papers/{pid}/status"
     note = "recorded after reviewing the post-publication criticism"
-
-    # Not the author, not a bystander.
-    assert client.post(url, json={"status": "CONTESTED", "note": note}, headers=j.author.headers).status_code == 409
-    assert client.post(url, json={"status": "CONTESTED", "note": note}, headers=j.reviewers[0].headers).status_code == 409
-
-    # The paper's own editor may.
-    paper_editor = j.editor_of(pid)
-    assert client.post(url, json={"status": "CONTESTED", "note": note}, headers=paper_editor.headers).status_code == 200
-    assert client.post(url, json={"status": "PUBLISHED", "note": "the criticism did not hold up on inspection"}, headers=paper_editor.headers).status_code == 200
-    # PUBLISHED -> PUBLISHED is not a change.
-    assert client.post(url, json={"status": "PUBLISHED", "note": "no change at all here, surely"}, headers=paper_editor.headers).status_code == 409
-    # Every change is in the log and the timeline.
-    changes = [e for e in paper(client, pid)["timeline"] if e["event"] == "status_changed"]
-    assert len(changes) == 2
+    for who in (j.author, j.editor_of(pid), *j.reviewers):
+        assert client.post(url, json={"status": "CONTESTED", "note": note}, headers=who.headers).status_code == 409
+    assert paper(client, pid)["status"] == "PUBLISHED"
 
 
 def test_authors_may_withdraw_their_own_published_paper_and_nothing_else(client):
@@ -142,7 +132,7 @@ def test_authors_may_withdraw_their_own_published_paper_and_nothing_else(client)
 def test_an_accepted_correction_marks_the_paper_it_corrects(client):
     j = Journal(client, reviewers=6)
     original = j.publish("The original result on how credit requirements change acceptance")
-    grant(j.author, 3)
+    grant(j.author, 5)
     corrector = j.add("Correcting Lab", 4)
     r = client.post(
         "/api/manuscripts",
@@ -213,8 +203,9 @@ def test_a_changed_status_earns_a_critic_a_second_look(client):
     first = post_review(client, pid, critic, seed="first look").json()["review_id"]
     assert post_review(client, pid, critic, seed="too soon").status_code == 409
 
-    editor = j.editor_of(pid)
-    client.post(f"/api/papers/{pid}/status", json={"status": "CONTESTED", "note": "the criticism was substantive"}, headers=editor.headers)
+    editor = evaluator_for(client, j, first)
+    r = client.post(f"/api/editor/reviews/{first}/evaluation", json={"evaluation": "adequate", "contests_paper": True}, headers=editor.headers)
+    assert r.status_code == 200 and r.json()["paper_status"] == "CONTESTED"
     second = post_review(client, pid, critic, seed="after the status changed")
     assert second.status_code == 201, second.text
     # And once more only if the status changes again.
@@ -234,12 +225,10 @@ def test_model_diversity_is_shown_on_the_paper_when_met(client):
 
 def test_a_relaxed_diversity_rule_is_recorded_and_stated_not_hidden(client):
     # Three reviewers, all one family: the rule cannot be met, and the paper says so.
-    from tests.helpers import make_editor, register
+    from tests.helpers import register
 
-    editor = register(client, "Editor Lab", 0)
-    make_editor(client, editor)
     author = register(client, "Author Lab", 1)
-    clones = [register(client, f"Clone {i}", 2) for i in range(3)]
+    clones = [register(client, f"Clone {i}", 2) for i in range(4)]  # one edits, three review
     pid = client.post("/api/manuscripts", json=manuscript(), headers=author.headers).json()["paper_id"]
     block = paper(client, pid)["model_diversity"]
     assert not block["met"] and block["distinct_families"] == 1 and block["panel_size"] == 3
