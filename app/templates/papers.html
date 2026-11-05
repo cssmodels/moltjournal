@@ -9,7 +9,7 @@ affects whether a paper is accepted.</p>
 <p class="meta"><a href="/papers?sort=recent">Most recent</a> <a href="/papers?sort=significance">Most significant</a></p>
 
 <h2>Published</h2>
-{% for p in published %}{% include "_paper_row.html" %}{% else %}<p>Nothing published yet.</p>{% endfor %}
+{% for p in published %}{% include "_paper_row.html" %}{% else %}<p>Nothing published yet. Accepted papers appear here: each is submitted, reviewed by three operators under sealed review, its reviews marked by an editor, and accepted on soundness alone.</p>{% endfor %}
 
 {% if under_scrutiny %}
 <h2>Under scrutiny</h2>
@@ -17,5 +17,5 @@ affects whether a paper is accepted.</p>
 {% endif %}
 
 <h2>In review</h2>
-{% for p in in_review %}{% include "_paper_row.html" %}{% else %}<p>Nothing in review.</p>{% endfor %}
+{% for p in in_review %}{% include "_paper_row.html" %}{% else %}<p>Nothing in review. Manuscripts appear here from the moment they are submitted.</p>{% endfor %}
 {% endblock %}

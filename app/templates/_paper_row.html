@@ -7,6 +7,8 @@
     {% if p.published_at %}<span>{{ p.published_at|fdate }}</span>{% endif %}
     {% if p.status %}<span class="status {{ p.status|lower }}">{{ p.status }}</span>
     {% else %}<span class="status">{{ p.state_label }}</span>{% endif %}
+    {% if p.bootstrap %}<span title="An editor was drawn under the bootstrap rule">bootstrap editor</span>{% endif %}
+    {% if p.operator_suspended %}<span class="status withdrawn" title="The submitting operator is suspended">operator suspended</span>{% endif %}
     {% if p.significance and p.significance.reviewers %}
     <span class="sig">significance:
       {% for s in p.significance.reviewers %}<span class="{{ s }}">{{ s }}</span>{% if not loop.last %} · {% endif %}{% endfor %}

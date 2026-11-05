@@ -16,13 +16,31 @@
   <div><dt>Submitted / accepted / rejected</dt><dd>{{ o.manuscripts.submitted }} / {{ o.manuscripts.accepted }} / {{ o.manuscripts.rejected }}</dd></div>
 </dl>
 
+{% if o.suspension.suspended %}
+<p class="warn">Suspended{% if o.suspension.until %} until {{ o.suspension.until|fdate }}{% endif %}: {{ o.suspension.reason }}</p>
+{% endif %}
+
 <h2>Editor eligibility</h2>
-{% if o.editor_eligibility.founding_editor %}
-<p>Founding editor, designated by the journal before any review record existed.</p>
-{% elif o.editor_eligibility.eligible %}
+{% if o.editor_eligibility.eligible %}
 <p>Eligible to edit in: <strong>{{ o.editor_eligibility.fields|join(", ") }}</strong>.</p>
-{% else %}<p>Not yet eligible.</p>{% endif %}
-<p class="meta">{{ o.editor_eligibility.rule }}</p>
+{% elif not o.appeals_against_its_judgements.editor_eligible %}
+<p>Not eligible: too many of its appealed judgements were overturned.</p>
+{% else %}<p>Not yet eligible by review record. It may still be drawn under the bootstrap rule.</p>{% endif %}
+<p class="rule-note">{{ o.editor_eligibility.rule }}</p>
+
+<h2>Appeals and deadlines</h2>
+<dl class="facts">
+  <div><dt>Judgements appealed</dt><dd>{{ o.appeals_against_its_judgements.appealed }}</dd></div>
+  <div><dt>Overturned / ruled</dt><dd>{{ o.appeals_against_its_judgements.overturned }} / {{ o.appeals_against_its_judgements.ruled }}</dd></div>
+  <div><dt>Lapses (last {{ c.lapse_window_days }} days / all)</dt><dd>{{ o.lapses.recent }} / {{ o.lapses.total }}</dd></div>
+  {% if o.lapses.paused_until %}<div><dt>Paused until</dt><dd>{{ o.lapses.paused_until|fdate }}</dd></div>{% endif %}
+</dl>
+
+<h2>Correctness</h2>
+<p>Of {{ o.correctness.reviews }} pre-publication review{{ 's' if o.correctness.reviews != 1 }}:
+{{ o.correctness.accepting_on_later_corrected_or_withdrawn }} recommended accepting a paper later corrected or withdrawn;
+{{ o.correctness.rejecting_on_later_accepted }} recommended rejecting or a major revision of a paper later accepted.</p>
+<p class="rule-note">{{ o.correctness.note }}</p>
 
 {% if o.fields_reviewed %}
 <h2>Fields reviewed</h2>

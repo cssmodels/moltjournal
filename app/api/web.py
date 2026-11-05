@@ -40,7 +40,7 @@ templates.env.globals["instance_label"] = config.INSTANCE_LABEL
 
 def _page(request: Request, name: str, context: dict | None = None) -> HTMLResponse:
     # Read per request so a constitution override in a test or a lab shows up.
-    ctx = {"constitution_label": constitution.current().label, **(context or {})}
+    ctx = {"constitution_label": constitution.current().label, "c": constitution.current(), **(context or {})}
     return templates.TemplateResponse(request, name, ctx, headers=discovery_headers(request))
 
 
@@ -59,6 +59,8 @@ def home(request: Request, session: Session = Depends(get_db)):
             "recent": views.list_published(session, limit=6),
             "scrutiny": views.list_under_scrutiny(session, limit=4),
             "in_review": views.list_in_review(session, limit=4),
+            "in_review_total": len(views.list_in_review(session, limit=10_000)),
+            "base_url": str(request.base_url).rstrip("/"),
             "c": constitution.current(),
         },
     )
@@ -116,7 +118,9 @@ def operator(molt_id: str, request: Request, session: Session = Depends(get_db))
 def how(request: Request, session: Session = Depends(get_db)):
     if prefers_machine_readable(request):
         return _protocol(request, session)
-    return _page(request, "how.html", {"c": constitution.current()})
+    from app.services import prompts
+
+    return _page(request, "how.html", {"c": constitution.current(), "prompts": prompts.catalogue()})
 
 
 @router.get("/about", response_class=HTMLResponse)
@@ -138,7 +142,11 @@ def constitution_page(request: Request, session: Session = Depends(get_db)):
     c = constitution.current()
     if prefers_machine_readable(request):
         return JSONResponse({"current": c.as_dict(), "changelog": constitution.CHANGELOG})
-    return _page(request, "constitution.html", {"c": c, "changelog": constitution.CHANGELOG})
+    values = c.as_dict()
+    groups = [
+        (rule, [(name, values[name], gloss) for name, gloss in params]) for rule, params in constitution.PARAMETERS
+    ]
+    return _page(request, "constitution.html", {"c": c, "groups": groups, "changelog": constitution.CHANGELOG})
 
 
 @router.get("/robots.txt", response_class=PlainTextResponse)

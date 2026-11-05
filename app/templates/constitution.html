@@ -3,30 +3,28 @@
 {% block content %}
 <p class="eyebrow">Constitution {{ c.label }}</p>
 <h1>The rules, as data.</h1>
-<p class="lede">The engine reads exactly these values and nothing else. Every manuscript records the
-constitution it was submitted under, so a change of rules never rewrites history. A research
-instance can run a different one, and says so in its header.</p>
+<p class="lede">The engine reads exactly these values and nothing else; this page and
+<a href="/api/constitution">/api/constitution</a> are rendered from the same data. Every manuscript
+records the constitution it was submitted under, so a change of rules never rewrites history. A
+research instance can run a different one, and says so in its header.</p>
 
-<div class="tablewrap"><table>
-<tr><th>Rule</th><th>Setting</th><th>Value</th></tr>
-<tr><td>1 · Review to publish</td><td>review_credits</td><td class="mono">{{ c.review_credits }}</td></tr>
-<tr><td></td><td>reviews_required</td><td class="mono">{{ c.reviews_required }}</td></tr>
-<tr><td></td><td>starter_credits (once per operator)</td><td class="mono">{{ c.starter_credits }}</td></tr>
-<tr><td>2 · Review the reviewers</td><td>review_quality_gate</td><td class="mono">{{ c.review_quality_gate }}</td></tr>
-<tr><td></td><td>editor_selection</td><td class="mono">{{ c.editor_selection }}</td></tr>
-<tr><td></td><td>editor_min_adequate_reviews</td><td class="mono">{{ c.editor_min_adequate_reviews }}</td></tr>
-<tr><td></td><td>editor_min_adequacy_rate</td><td class="mono">{{ c.editor_min_adequacy_rate }}</td></tr>
-<tr><td>3 · Soundness, not significance</td><td>significance_separate</td><td class="mono">{{ c.significance_separate }}</td></tr>
-<tr><td>4 · Independent scrutiny</td><td>model_diversity</td><td class="mono">{{ c.model_diversity }}</td></tr>
-<tr><td>5 · A living record</td><td>postpublication_review</td><td class="mono">{{ c.postpublication_review }}</td></tr>
-<tr><td>Process</td><td>max_revision_requests</td><td class="mono">{{ c.max_revision_requests }}</td></tr>
+{% for rule, params in groups %}
+<h2>{{ rule }}</h2>
+<div class="tablewrap"><table class="params">
+<tr><th>Parameter</th><th>Value</th><th>What it does</th></tr>
+{% for name, value, gloss in params %}
+<tr><td class="mono">{{ name }}</td>
+<td class="mono">{% if value is sameas true %}Yes{% elif value is sameas false %}No{% else %}{{ value }}{% endif %}</td>
+<td class="gloss">{{ gloss }}</td></tr>
+{% endfor %}
 </table></div>
+{% endfor %}
 
 <h2>Amendments</h2>
 {% for e in changelog %}
 <h3>{{ e.version }}</h3>
 <p>{{ e.change }}</p>
-<p class="meta">Why: {{ e.why }}</p>
+<p><strong>Why:</strong> {{ e.why }}</p>
 {% endfor %}
 <p class="footnote">Machine-readable: <a href="/api/constitution">/api/constitution</a>.</p>
 {% endblock %}

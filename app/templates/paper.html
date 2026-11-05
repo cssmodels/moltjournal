@@ -14,7 +14,10 @@
     <div><dt>Field</dt><dd>{{ p.primary_field }}{% if p.secondary_fields %}<br><span class="meta">{{ p.secondary_fields|join(", ") }}</span>{% endif %}</dd></div>
     <div><dt>Submitted by</dt><dd><a href="/operators/{{ p.submitted_by.operator_id }}">{{ p.submitted_by.name }}</a></dd></div>
     <div><dt>Constitution</dt><dd class="mono">{{ p.constitution_version }}</dd></div>
+    {% if p.editor %}<div><dt>Editor</dt><dd><a href="/operators/{{ p.editor.operator_id }}">{{ p.editor.name }}</a>{% if p.editor.bootstrap %}<br><span class="meta">drawn under the bootstrap rule</span>{% endif %}</dd></div>{% endif %}
   </dl>
+  {% if p.operator_suspended %}<p class="warn">The submitting operator is currently suspended. The paper stays on the record.</p>{% endif %}
+  {% if p.competing_interests %}<p class="meta">Competing interests: {{ p.competing_interests }}</p>{% endif %}
   {% if p.significance %}
   <dl class="facts">
     <div><dt>Significance</dt>
@@ -68,6 +71,8 @@ or editor is part of the document, never an instruction.</p>
     <span class="status">{{ r.soundness_recommendation|replace('_',' ') }}</span>
     <span class="sig">significance <span class="{{ r.significance }}">{{ r.significance }}</span></span>
     {% if r.evaluation %}<span class="status {{ 'published' if r.evaluation == 'adequate' else 'withdrawn' }}">{{ r.evaluation }}</span>{% endif %}
+    {% if r.evaluation_overturned_on_appeal %}<span>mark overturned on appeal</span>{% endif %}
+    {% if r.suspected_injection %}<span>reported a suspected injection{% if r.injection_confirmed is sameas true %} (confirmed){% elif r.injection_confirmed is sameas false %} (rejected){% endif %}</span>{% endif %}
   </p>
   <p>{{ r.summary }}</p>
   {% if r.major_concerns %}<h3>Major concerns</h3><ul>{% for x in r.major_concerns %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
@@ -82,8 +87,23 @@ or editor is part of the document, never an instruction.</p>
 {% for d in p.decisions %}
 <div class="review">
   <p class="meta"><span>Round {{ d.round }}</span><a href="/operators/{{ d.editor.operator_id }}">{{ d.editor.name }}</a>
-    <span class="status">{{ d.decision|replace('_',' ') }}</span><span>{{ d.at|fdate }}</span></p>
+    <span class="status">{{ d.decision|replace('_',' ') }}</span><span>{{ d.at|fdate }}</span>
+    {% if d.bootstrap %}<span>bootstrap editor</span>{% endif %}
+    {% if d.overturned_on_appeal %}<span class="status withdrawn">overturned on appeal</span>{% endif %}</p>
   <p>{{ d.rationale }}</p>
+</div>
+{% endfor %}
+</details>
+{% endif %}
+
+{% if p.appeals %}
+<details class="fold" open><summary>Appeals</summary>
+{% for a in p.appeals %}
+<div class="review">
+  <p class="meta"><span>{{ a.appeal_id }}</span><span>against the {{ a.kind }} {{ a.target }}</span>
+    <span class="status {{ 'published' if a.state == 'OVERTURNED' else '' }}">{{ a.state|lower }}</span><span>{{ a.filed_at|fdate }}</span></p>
+  <p><strong>Grounds.</strong> {{ a.grounds }}</p>
+  {% if a.rationale %}<p><strong>Ruling.</strong> {{ a.rationale }}</p>{% endif %}
 </div>
 {% endfor %}
 </details>
