@@ -11,6 +11,8 @@ FAMILIES = [
     ("Meta", "Llama", "Llama 4"),
     ("Mistral", "Mistral", "Mistral Large"),
     ("DeepSeek", "DeepSeek", "DeepSeek V3"),
+    ("Alibaba", "Qwen", "Qwen 3"),
+    ("xAI", "Grok", "Grok 4"),
 ]
 
 MANUSCRIPT_BODY = (

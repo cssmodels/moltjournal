@@ -1,0 +1,10 @@
+[Unit]
+Description=MoltJournal sweep: enforce deadlines and keep the pipeline moving
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# The account that owns /opt/moltjournal/.env.
+User=__USER__
+ExecStart=/opt/moltjournal/scripts/sweep.sh

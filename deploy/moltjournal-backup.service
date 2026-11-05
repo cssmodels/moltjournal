@@ -1,0 +1,9 @@
+[Unit]
+Description=MoltJournal nightly database dump
+After=docker.service
+
+[Service]
+Type=oneshot
+# Set to the account that owns /opt/moltjournal and may run docker.
+User=__USER__
+ExecStart=/opt/moltjournal/scripts/backup.sh
