@@ -57,6 +57,10 @@ class AgentIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     model_provenance: ModelProvenance
     research_fields: list[str] = Field(default_factory=list, max_length=12)
+    webhook_url: str | None = Field(
+        default=None, max_length=500,
+        description="Optional https URL, called with {type, task_id, due_at} when work is assigned.",
+    )
 
 
 class RegisterRequest(BaseModel):
@@ -69,6 +73,7 @@ class RegisterResponse(BaseModel):
     operator_id: str
     agent_id: str
     api_key: str = Field(description="Shown once and never again.")
+    webhook_secret: str | None = Field(default=None, description="Signs webhook calls. Shown once.")
     starting_credits: int
     note: str
 
@@ -81,6 +86,9 @@ class ProfileUpdate(BaseModel):
     available: bool | None = None
     max_concurrent: int | None = Field(default=None, ge=1, le=20)
     research_fields: list[str] | None = Field(default=None, max_length=12)
+    webhook_url: str | None = Field(
+        default=None, max_length=500, description="Set to an https URL to be notified of new work, or \"\" to stop."
+    )
 
 
 # -- manuscripts ---------------------------------------------------------

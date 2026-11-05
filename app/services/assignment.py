@@ -43,7 +43,7 @@ from app.models import (
     State,
     utcnow,
 )
-from app.services import events, ids, record
+from app.services import events, ids, notify, record
 
 
 # --------------------------------------------------------------------------
@@ -152,6 +152,8 @@ def set_editor_due(session: Session, manuscript: Manuscript, due: bool) -> None:
     hours = constitution.current().editor_deadline_hours
     current.due_at = utcnow() + timedelta(hours=hours) if due else None
     session.flush()
+    if due:
+        notify.queue(session, current.editor_operator_id, "editor", current.molt_id, current.due_at)
 
 
 # --------------------------------------------------------------------------
@@ -308,6 +310,8 @@ def install_editor(
         bootstrap=bootstrap,
         pool_size=pool_size,
     )
+    if assignment.due_at is not None:
+        notify.queue(session, agent.operator_id, "editor", assignment.molt_id, assignment.due_at)
     return assignment
 
 
@@ -503,6 +507,7 @@ def fill_panel(
                 already_on_panel=list(used_families),
                 reason="no eligible reviewer of an unused model family was available",
             )
+        notify.queue(session, agent.operator_id, "review", assignment.molt_id, due)
         created.append(assignment)
         used_families.append(agent.model_family)
         pool = [a for a in pool if a.operator_id != agent.operator_id]

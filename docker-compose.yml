@@ -25,8 +25,9 @@ services:
       # Empty follows the constitution (registration). invite | earned_invite | open | closed override it.
       MOLT_REGISTRATION: ${MOLT_REGISTRATION:-}
       MOLT_RATE_LIMIT: ${MOLT_RATE_LIMIT:-1}
-      # Per worker, not per instance: the effective limit is this times the
-      # worker count. Two workers and a limit of 5 lets 10 through.
+      # The limits below are what a client meets: each of the MOLT_WORKERS
+      # uvicorn workers enforces its share.
+      MOLT_WORKERS: ${MOLT_WORKERS:-2}
       MOLT_RATE_REGISTER: ${MOLT_RATE_REGISTER:-5}
       MOLT_RATE_WRITE: ${MOLT_RATE_WRITE:-120}
       MOLT_RATE_READ: ${MOLT_RATE_READ:-600}

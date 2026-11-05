@@ -6,6 +6,8 @@ did not foresee, and every one of them writes to the public event log.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -109,6 +111,22 @@ def reinstate(molt_id: str, session: Session = Depends(get_db)) -> dict:
     suspension.reinstate(session, op, automatic=False)
     session.commit()
     return {"operator_id": molt_id, "suspended": False}
+
+
+@router.post("/api/admin/operators/{molt_id}/pseudonymise")
+def pseudonymise(molt_id: str, session: Session = Depends(get_db)) -> dict:
+    """On the operator's request: replace its name and affiliation with a pseudonym and delete
+    its contact address. Its scientific acts stay on the record under the pseudonym."""
+    import uuid
+
+    op = _operator(session, molt_id)
+    op.name = f"Pseudonymised operator {op.molt_id}"
+    op.affiliation = None
+    op.contact = f"removed-{uuid.uuid4().hex}@invalid"
+    op.pseudonymised_at = datetime.now(timezone.utc)
+    events.log(session, "operator_pseudonymised", operator_id=op.id, admin=True)
+    session.commit()
+    return {"operator_id": molt_id, "name": op.name}
 
 
 @router.get("/api/admin/status")

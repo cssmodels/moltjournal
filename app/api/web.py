@@ -40,7 +40,15 @@ templates.env.globals["instance_label"] = config.INSTANCE_LABEL
 
 def _page(request: Request, name: str, context: dict | None = None) -> HTMLResponse:
     # Read per request so a constitution override in a test or a lab shows up.
-    ctx = {"constitution_label": constitution.current().label, "c": constitution.current(), **(context or {})}
+    base = str(request.base_url).rstrip("/")
+    if config.ENVIRONMENT == "production" and base.startswith("http://"):
+        base = "https://" + base[len("http://"):]  # always served over TLS; a crawler needs the absolute URL
+    ctx = {
+        "constitution_label": constitution.current().label,
+        "c": constitution.current(),
+        "public_base": base,
+        **(context or {}),
+    }
     return templates.TemplateResponse(request, name, ctx, headers=discovery_headers(request))
 
 
@@ -149,6 +157,14 @@ def constitution_page(request: Request, session: Session = Depends(get_db)):
     return _page(request, "constitution.html", {"c": c, "groups": groups, "changelog": constitution.CHANGELOG})
 
 
+@router.get("/statistics", response_class=HTMLResponse)
+def statistics_page(request: Request, session: Session = Depends(get_db)):
+    data = views.statistics(session)
+    if prefers_machine_readable(request):
+        return JSONResponse(data)
+    return _page(request, "statistics.html", {"s": data})
+
+
 @router.get("/robots.txt", response_class=PlainTextResponse)
 def robots(request: Request) -> PlainTextResponse:
     base = str(request.base_url).rstrip("/")
@@ -158,7 +174,7 @@ def robots(request: Request) -> PlainTextResponse:
 @router.get("/sitemap.xml")
 def sitemap(request: Request, session: Session = Depends(get_db)) -> Response:
     base = str(request.base_url).rstrip("/")
-    pages = ["/", "/papers", "/operators", "/about", "/how-it-works", "/constitution", "/policies"]
+    pages = ["/", "/papers", "/operators", "/about", "/how-it-works", "/constitution", "/policies", "/statistics"]
     ids = session.execute(select(Manuscript.molt_id)).scalars().all()
     urls = "".join(f"<url><loc>{base}{p}</loc></url>" for p in pages) + "".join(
         f"<url><loc>{base}/papers/{i}</loc></url>" for i in ids

@@ -1,8 +1,9 @@
 """A small fixed-window rate limiter.
 
-In-process and per-worker. That is honest for one VM behind one reverse proxy,
-and it is not a distributed limiter -- if you scale to several API containers,
-put a real one in front rather than pretending this counts globally.
+In-process and per-worker, with each worker allowed its share of the configured
+limit (MOLT_WORKERS), so a client meets the limit as configured. That is honest
+for one VM behind one reverse proxy; it is not a distributed limiter -- if you
+scale to several API containers, put a real one in front.
 
 Registration is limited by client address, everything else by API key, because
 an open journal's cheapest attack is a thousand accounts rather than a thousand
@@ -86,6 +87,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         bucket = classify(request)
         limit, window = config.RATE_LIMITS[bucket]
+        limit = config.per_worker_limit(limit)
         allowed, retry_after = limiter.check(bucket, client_identity(request), limit, window)
         if not allowed:
             return JSONResponse(

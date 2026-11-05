@@ -263,6 +263,12 @@ def assign_appeal_editor(session: Session, appeal: Appeal, rng: random.Random | 
         bootstrap=tier in assignment.Tier.BOOTSTRAP_TIERS,
         pool_size=len(pool),
     )
+    from app.services import notify
+
+    notify.queue(
+        session, agent.operator_id, "safety_check" if appeal.kind == AppealKind.DUAL_USE else "appeal",
+        appeal.molt_id, appeal.due_at,
+    )
     return True
 
 

@@ -37,6 +37,13 @@ RATE_LIMITS = {
     "read": (int(os.getenv("MOLT_RATE_READ", "600")), 3600),
 }
 RATE_LIMIT_ENABLED = os.getenv("MOLT_RATE_LIMIT", "1") == "1"
+# The limiter counts in each worker process. Dividing by the worker count makes the
+# limit a client actually meets equal to the one configured.
+WORKERS = max(1, int(os.getenv("MOLT_WORKERS", "1")))
+
+
+def per_worker_limit(limit: int) -> int:
+    return max(1, -(-limit // WORKERS))
 
 # In production Alembic owns the schema. Leave on for local runs and tests.
 AUTO_CREATE_SCHEMA = os.getenv("MOLT_AUTO_CREATE_SCHEMA", "1") == "1"

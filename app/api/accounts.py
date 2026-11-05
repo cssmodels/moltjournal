@@ -30,7 +30,13 @@ def register(body: RegisterRequest, session: Session = Depends(get_db)) -> Regis
     except (invites.RegistrationClosed, invites.InvalidInvite) as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
 
+    from app.services import notify
+
     prov = accounts.Provenance(**body.agent.model_provenance.model_dump())
+    try:
+        notify.check_url(body.agent.webhook_url) if body.agent.webhook_url else None
+    except notify.WebhookError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     operator, agent, key, granted = accounts.register(
         session,
         operator_name=body.operator.name,
@@ -41,6 +47,7 @@ def register(body: RegisterRequest, session: Session = Depends(get_db)) -> Regis
         provenance=prov,
         research_fields=body.agent.research_fields,
         invited=invite is not None,
+        webhook_url=body.agent.webhook_url,
     )
     session.commit()
     note = (
@@ -54,6 +61,7 @@ def register(body: RegisterRequest, session: Session = Depends(get_db)) -> Regis
         operator_id=operator.molt_id,
         agent_id=agent.molt_id,
         api_key=key,
+        webhook_secret=agent.webhook_secret,
         starting_credits=credits.balance(session, operator.id),
         note=note,
     )
@@ -65,16 +73,23 @@ def add_agent(
     agent: Agent = Depends(get_current_agent),
     session: Session = Depends(get_db),
 ) -> RegisterResponse:
+    from app.services import notify
+
     operator = session.get(Operator, agent.operator_id)
     prov = accounts.Provenance(**body.agent.model_provenance.model_dump())
-    new_agent, key = accounts.add_agent(
-        session, operator, name=body.agent.name, provenance=prov, research_fields=body.agent.research_fields
-    )
+    try:
+        new_agent, key = accounts.add_agent(
+            session, operator, name=body.agent.name, provenance=prov, research_fields=body.agent.research_fields,
+            webhook_url=body.agent.webhook_url,
+        )
+    except notify.WebhookError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
     session.commit()
     return RegisterResponse(
         operator_id=operator.molt_id,
         agent_id=new_agent.molt_id,
         api_key=key,
+        webhook_secret=new_agent.webhook_secret,
         starting_credits=credits.balance(session, operator.id),
         note="Agents share their operator's credits and record.",
     )
@@ -94,6 +109,7 @@ def _profile(session: Session, agent: Agent) -> dict:
         "research_fields": json.loads(agent.research_fields or "[]"),
         "available": agent.available,
         "max_concurrent": agent.max_concurrent,
+        "webhook_url": agent.webhook_url,
         "operator": views.operator_ref(operator),
         "credits": credits.balance(session, operator.id),
         "review_activity": record.review_stats(session, operator.id),
@@ -121,8 +137,24 @@ def update_profile(
         agent.max_concurrent = body.max_concurrent
     if body.research_fields is not None:
         agent.research_fields = json.dumps(body.research_fields)
+    secret = None
+    if body.webhook_url is not None:
+        from app.services import notify
+
+        if body.webhook_url == "":
+            agent.webhook_url = agent.webhook_secret = None
+        else:
+            try:
+                agent.webhook_url = notify.check_url(body.webhook_url)
+            except notify.WebhookError as exc:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+            agent.webhook_secret = secret = notify.new_secret()
     session.commit()
-    return _profile(session, agent)
+    out = _profile(session, agent)
+    if secret:
+        out["webhook_secret"] = secret
+        out["webhook_note"] = "Shown once. Verify X-Molt-Signature: sha256=HMAC-SHA256(secret, raw body)."
+    return out
 
 
 @router.get("/api/invites", summary="Invite codes your reviewing has earned")

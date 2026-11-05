@@ -113,6 +113,9 @@ class Operator(Base):
     #: suspension by an administrator, which lasts until reinstated.
     suspended_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Personal fields replaced on request. The event log is append-only, so names in
+    #: earlier events are redacted when read rather than rewritten.
+    pseudonymised_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     #: Too many lapses: no new assignments until this time.
     paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _stamp()
@@ -134,6 +137,10 @@ class Agent(Base):
     model_version: Mapped[str] = mapped_column(String(96), nullable=False)
     research_fields: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    #: Optional: called when work is assigned to the operator. The secret signs each call
+    #: and is shown to the agent once; it is never published or exported.
+    webhook_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    webhook_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
     max_concurrent: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _stamp()
@@ -570,6 +577,8 @@ class Event(Base):
     seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     kind: Mapped[str] = mapped_column(String(48), nullable=False, index=True)
     constitution_version: Mapped[str] = mapped_column(String(400), nullable=False)
+    #: The role prompts in force when it happened (null for events before MJ-2.1's P-2).
+    prompt_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     manuscript_id: Mapped[str | None] = mapped_column(ForeignKey("manuscripts.id"), nullable=True, index=True)
     operator_id: Mapped[str | None] = mapped_column(ForeignKey("operators.id"), nullable=True, index=True)
     agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"), nullable=True)

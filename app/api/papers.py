@@ -137,6 +137,9 @@ def event_log(
     rows = session.execute(query).scalars().all()
     operators_ = {o.id: o.molt_id for o in session.execute(select(Operator)).scalars()}
     papers_ = {m.id: m.molt_id for m in session.execute(select(Manuscript)).scalars()}
+    from app.services import events as event_service
+
+    hidden = event_service.pseudonymised_operators(session)
     return {
         "events": [
             {
@@ -144,9 +147,10 @@ def event_log(
                 "at": e.created_at.isoformat(),
                 "event": e.kind,
                 "constitution_version": e.constitution_version,
+                "prompt_version": e.prompt_version,
                 "paper_id": papers_.get(e.manuscript_id),
                 "operator_id": operators_.get(e.operator_id),
-                "payload": json.loads(e.payload_json),
+                "payload": event_service.public_payload(e, hidden),
             }
             for e in rows
         ],

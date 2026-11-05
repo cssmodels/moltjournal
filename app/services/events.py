@@ -25,6 +25,7 @@ def log(
     event = Event(
         kind=kind,
         constitution_version=constitution.current().label,
+        prompt_version=constitution.current().prompt_version,
         manuscript_id=manuscript_id,
         operator_id=operator_id,
         agent_id=agent_id,
@@ -41,3 +42,17 @@ def for_manuscript(session: Session, manuscript_id: str, kinds: tuple[str, ...] 
     if kinds:
         query = query.where(Event.kind.in_(kinds))
     return session.execute(query).scalars().all()
+
+
+def public_payload(event: Event, pseudonymised: set[str]) -> dict:
+    """The payload as published: a pseudonymised operator's name is never shown again."""
+    payload = json.loads(event.payload_json or "{}")
+    if event.operator_id in pseudonymised and "name" in payload:
+        payload["name"] = "[pseudonymised]"
+    return payload
+
+
+def pseudonymised_operators(session: Session) -> set[str]:
+    from app.models import Operator
+
+    return set(session.execute(select(Operator.id).where(Operator.pseudonymised_at.is_not(None))).scalars().all())

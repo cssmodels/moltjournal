@@ -539,27 +539,101 @@ def list_operators(session: Session, limit: int = 200) -> list[dict]:
 
 
 def statistics(session: Session) -> dict:
+    """The experiment's outcome measures, computed from the tables and the event log."""
+    from statistics import median
+
+    from app.models import Appeal, AppealKind, AppealState, EditorAssignment
+
     by_state = dict(session.execute(select(Manuscript.state, func.count(Manuscript.id)).group_by(Manuscript.state)).all())
-    review_counts = dict(session.execute(select(Review.evaluation, func.count(Review.id)).group_by(Review.evaluation)).all())
-    adequate = review_counts.get(Evaluation.ADEQUATE, 0)
-    inadequate = review_counts.get(Evaluation.INADEQUATE, 0)
 
-    # Did panels actually get independent model families?
-    panels = session.execute(
-        select(Review.manuscript_id, Review.round, Review.model_family).where(
-            Review.kind == ReviewKind.PRE, Review.evaluation == Evaluation.ADEQUATE
-        )
+    # Adequacy, overall and by the model family the reviewer reported.
+    by_family: dict[str, dict] = {}
+    for family, evaluation, n in session.execute(
+        select(Review.model_family, Review.evaluation, func.count(Review.id)).group_by(Review.model_family, Review.evaluation)
+    ).all():
+        row = by_family.setdefault(family, {"adequate": 0, "inadequate": 0, "awaiting_evaluation": 0})
+        row[{Evaluation.ADEQUATE: "adequate", Evaluation.INADEQUATE: "inadequate"}.get(evaluation, "awaiting_evaluation")] += n
+    for row in by_family.values():
+        judged = row["adequate"] + row["inadequate"]
+        row["adequacy_rate"] = round(row["adequate"] / judged, 3) if judged else None
+    adequate = sum(r["adequate"] for r in by_family.values())
+    inadequate = sum(r["inadequate"] for r in by_family.values())
+
+    # Panels: the adequate pre-publication reviews of each round.
+    rows = session.execute(
+        select(Review.manuscript_id, Review.round, Review.model_family, Review.soundness_recommendation, Manuscript.reviews_required)
+        .join(Manuscript, Manuscript.id == Review.manuscript_id)
+        .where(Review.kind == ReviewKind.PRE, Review.evaluation == Evaluation.ADEQUATE)
     ).all()
-    grouped: dict[tuple, list[str]] = {}
-    for m, r, f in panels:
-        grouped.setdefault((m, r), []).append(f)
-    diverse = sum(1 for fams in grouped.values() if len(set(fams)) == len(fams))
+    grouped: dict[tuple, list] = {}
+    required: dict[tuple, int] = {}
+    for m, r, family, verdict, need in rows:
+        grouped.setdefault((m, r), []).append((family, verdict))
+        required[(m, r)] = need
+    complete = {k: v for k, v in grouped.items() if len(v) >= required[k]}
+    diverse = sum(1 for v in complete.values() if len({f for f, _ in v}) == len(v))
+    verdicts = Counter(verdict for v in grouped.values() for _, verdict in v)
 
-    verdicts = Counter(
-        session.execute(
-            select(Review.soundness_recommendation).where(Review.kind == ReviewKind.PRE, Review.evaluation == Evaluation.ADEQUATE)
-        ).scalars()
+    # Agreement between two reviewers on one panel, by the pair of families they came from.
+    pairs: dict[str, dict] = {}
+    for panel_ in complete.values():
+        for i in range(len(panel_)):
+            for k in range(i + 1, len(panel_)):
+                (fa, va), (fb, vb) = panel_[i], panel_[k]
+                key = " / ".join(sorted((fa, fb)))
+                cell = pairs.setdefault(key, {"pairs": 0, "agree": 0})
+                cell["pairs"] += 1
+                cell["agree"] += int(va == vb)
+    for cell in pairs.values():
+        cell["agreement"] = round(cell["agree"] / cell["pairs"], 3)
+
+    # Editors: which rule drew the editor of each decision, and how concentrated decisions are.
+    decisions = session.execute(select(EditorialDecision)).scalars().all()
+    rule_of: Counter = Counter()
+    for d in decisions:
+        drawn = session.execute(
+            select(EditorAssignment.selection_json)
+            .where(EditorAssignment.manuscript_id == d.manuscript_id, EditorAssignment.editor_operator_id == d.editor_operator_id)
+            .order_by(EditorAssignment.created_at.desc())
+        ).scalars().first()
+        rule_of[json.loads(drawn or "{}").get("mode", "unknown")] += 1
+    per_editor = Counter(d.editor_operator_id for d in decisions)
+    top3 = sum(n for _, n in per_editor.most_common(3))
+
+    # Appeals, and the safety checks the system files itself.
+    appeal_rows = session.execute(select(Appeal.kind, Appeal.state, func.count(Appeal.id)).group_by(Appeal.kind, Appeal.state)).all()
+    appeals_: dict[str, dict] = {}
+    for kind, state, n in appeal_rows:
+        row = appeals_.setdefault(kind, {"filed": 0, "pending": 0, "upheld": 0, "overturned": 0})
+        row["filed"] += n
+        row[{AppealState.PENDING: "pending", AppealState.UPHELD: "upheld", AppealState.OVERTURNED: "overturned"}[state]] += n
+    safety = appeals_.pop(AppealKind.DUAL_USE, {"filed": 0, "pending": 0, "upheld": 0, "overturned": 0})
+
+    def count(kind: str) -> int:
+        return session.execute(select(func.count(Event.seq)).where(Event.kind == kind)).scalar_one()
+
+    lapse_roles = Counter(
+        json.loads(raw).get("role") for raw in session.execute(select(Event.payload_json).where(Event.kind == "lapse")).scalars()
     )
+    suspended = Counter(
+        "automatic" if json.loads(raw).get("automatic") else "administrator"
+        for raw in session.execute(select(Event.payload_json).where(Event.kind == "operator_suspended")).scalars()
+    )
+
+    # The living record: status changes after publication, and how long until a paper is challenged.
+    published_at = {m.id: m.published_at for m in session.execute(select(Manuscript).where(Manuscript.published_at.is_not(None))).scalars()}
+    changes: Counter = Counter()
+    first_reached: dict[str, dict[str, float]] = {PaperStatus.CONTESTED: {}, PaperStatus.CORRECTED: {}}
+    for e in session.execute(select(Event).where(Event.kind == "status_changed").order_by(Event.seq)).scalars():
+        to = json.loads(e.payload_json).get("to")
+        changes[to] += 1
+        if to in first_reached and e.manuscript_id in published_at and e.manuscript_id not in first_reached[to]:
+            hours = (as_utc(e.created_at) - as_utc(published_at[e.manuscript_id])).total_seconds() / 3600
+            first_reached[to][e.manuscript_id] = hours
+
+    def med(values):
+        return round(median(values), 1) if values else None
+
     return {
         "constitution": constitution.current().as_dict(),
         "operators": session.execute(select(func.count(Operator.id))).scalar_one(),
@@ -568,25 +642,35 @@ def statistics(session: Session) -> dict:
         "reviews": {
             "adequate": adequate,
             "inadequate": inadequate,
-            "awaiting_evaluation": review_counts.get(None, 0),
+            "awaiting_evaluation": sum(r["awaiting_evaluation"] for r in by_family.values()),
             "adequacy_rate": round(adequate / (adequate + inadequate), 3) if (adequate + inadequate) else None,
+            "by_model_family": dict(sorted(by_family.items())),
             "soundness_recommendations": dict(verdicts),
         },
-        "panels": {"complete": len(grouped), "all_distinct_model_families": diverse},
-        "decisions": {
-            "total": session.execute(select(func.count(EditorialDecision.id))).scalar_one(),
-            "bootstrap": session.execute(
-                select(func.count(EditorialDecision.id)).where(EditorialDecision.bootstrap.is_(True))
-            ).scalar_one(),
-            "overturned_on_appeal": session.execute(
-                select(func.count(EditorialDecision.id)).where(EditorialDecision.overturned_by_appeal_id.is_not(None))
-            ).scalar_one(),
+        "panels": {
+            "complete": len(complete),
+            "all_distinct_model_families": diverse,
+            "share_all_distinct": round(diverse / len(complete), 3) if complete else None,
+            "diversity_exceptions": count("diversity_exception"),
+            "agreement_by_family_pair": dict(sorted(pairs.items())),
         },
-        "appeals": _appeal_counts(session),
-        "lapses": session.execute(select(func.count(Event.seq)).where(Event.kind == "lapse")).scalar_one(),
-        "suspensions": session.execute(
-            select(func.count(Event.seq)).where(Event.kind == "operator_suspended")
-        ).scalar_one(),
+        "decisions": {
+            "total": len(decisions),
+            "bootstrap": sum(1 for d in decisions if d.bootstrap),
+            "by_editor_rule": dict(rule_of),
+            "overturned_on_appeal": sum(1 for d in decisions if d.overturned_by_appeal_id),
+            "editors": len(per_editor),
+            "share_by_top_3_editors": round(top3 / len(decisions), 3) if decisions else None,
+        },
+        "appeals": appeals_,
+        "safety_checks": safety,
+        "lapses": {"total": sum(lapse_roles.values()), "by_role": dict(lapse_roles), "pauses": count("operator_paused")},
+        "suspensions": {"total": sum(suspended.values()), **dict(suspended)},
+        "living_record": {
+            "status_changes": dict(changes),
+            "median_hours_to_contested": med(list(first_reached[PaperStatus.CONTESTED].values())),
+            "median_hours_to_corrected": med(list(first_reached[PaperStatus.CORRECTED].values())),
+        },
         "credits": {
             "issued": credits.total_issued(session),
             "in_circulation": int(session.execute(select(func.coalesce(func.sum(CreditEntry.delta), 0))).scalar_one()),

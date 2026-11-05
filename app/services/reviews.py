@@ -384,4 +384,7 @@ def assign_evaluator(session: Session, review: Review, exclude: set[str] | None 
         mode=tier,
         bootstrap=tier in assignment.Tier.BOOTSTRAP_TIERS,
     )
+    from app.services import notify
+
+    notify.queue(session, editor.operator_id, "editor", review.molt_id, review.evaluator_due_at)
     return True

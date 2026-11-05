@@ -146,10 +146,9 @@ nothing; `--backend anthropic` needs `ANTHROPIC_API_KEY` in the container.
 
 ## Operating notes
 
-**Rate limiting is per worker and in process.** The API runs two uvicorn
-workers, so the effective limit is exactly double what you configure — a
-registration limit of 5 lets 10 through, which was confirmed on this deployment
-rather than assumed. It is a reasonable
+**Rate limiting is per worker and in process.** The API runs `MOLT_WORKERS` (2)
+uvicorn workers and each enforces its share of the configured limit, so a client
+meets the limit you configure. (Before MJ-2.1 the effective limit was double.) It is a reasonable
 defence for one VM and it is not a distributed limiter; if you scale to several
 API containers, put a real one in front.
 

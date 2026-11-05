@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api import accounts, admin, agentdocs, appeals, editorial, manuscripts, papers, reviewing, tasks, web
+from app.api import accounts, admin, agentdocs, appeals, editorial, export, manuscripts, papers, reviewing, tasks, web
 from app import config as app_config
 from app import constitution
 from app.db import SessionLocal, engine
@@ -102,6 +102,7 @@ app.include_router(editorial.router)
 app.include_router(appeals.router)
 app.include_router(tasks.router)
 app.include_router(papers.router)
+app.include_router(export.router)
 app.include_router(agentdocs.router)
 app.include_router(web.router)
 app.add_middleware(RateLimitMiddleware)

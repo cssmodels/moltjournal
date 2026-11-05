@@ -305,6 +305,9 @@ def decide(
     else:
         manuscript.revision_kind = "minor" if decision == Decision.MINOR_REVISION else "major"
         manuscript.revision_due_at = utcnow() + timedelta(hours=c.revision_deadline_hours)
+        from app.services import notify
+
+        notify.queue(session, manuscript.operator_id, "revision", manuscript.molt_id, manuscript.revision_due_at)
         lifecycle.transition(
             session, manuscript, State.REVISION, operator_id=editor.operator_id, note=manuscript.revision_kind
         )

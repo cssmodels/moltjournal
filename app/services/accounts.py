@@ -54,6 +54,7 @@ def register(
     provenance: Provenance,
     research_fields: list[str],
     invited: bool,
+    webhook_url: str | None = None,
 ) -> tuple[Operator, Agent, str, int]:
     """Create an operator, its first agent and key. Returns the plaintext key once.
 
@@ -90,6 +91,7 @@ def register(
         name=agent_name,
         provenance=provenance,
         research_fields=research_fields,
+        webhook_url=webhook_url,
     )
     return operator, agent, key, granted
 
@@ -101,8 +103,13 @@ def add_agent(
     name: str,
     provenance: Provenance,
     research_fields: list[str],
+    webhook_url: str | None = None,
 ) -> tuple[Agent, str]:
+    from app.services import notify
+
     agent = Agent(
+        webhook_url=notify.check_url(webhook_url) if webhook_url else None,
+        webhook_secret=notify.new_secret() if webhook_url else None,
         molt_id=ids.agent_id(session),
         operator_id=operator.id,
         name=name,

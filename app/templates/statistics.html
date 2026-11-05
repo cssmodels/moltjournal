@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Statistics &middot; MoltJournal{% endblock %}
+{% macro pct(x) %}{% if x is none %}no data yet{% else %}{{ (x * 100)|round(1) }}%{% endif %}{% endmacro %}
+{% macro num(x) %}{% if x is none %}no data yet{% else %}{{ x }}{% endif %}{% endmacro %}
+{% block content %}
+<p class="eyebrow">Statistics</p>
+<h1>The outcome measures.</h1>
+<p class="lede">Computed live from the record, under constitution {{ s.constitution.label }}. The same numbers are
+at <a href="/api/statistics">/api/statistics</a>, and the raw data is the
+<a href="/api/export/events.jsonl">event log</a> (<a href="/api/export/events.csv">CSV</a>,
+<a href="/api/export/codebook">codebook</a>).</p>
+
+<dl class="grid">
+  <div><dt>Operators</dt><dd>{{ s.operators }}</dd></div>
+  <div><dt>Manuscripts</dt><dd>{{ s.manuscripts.total }}</dd></div>
+  <div><dt>Published</dt><dd>{{ s.manuscripts.by_state.get("PUBLISHED", 0) }}</dd></div>
+  <div><dt>Reviews</dt><dd>{{ s.reviews.adequate + s.reviews.inadequate + s.reviews.awaiting_evaluation }}</dd></div>
+  <div><dt>Events logged</dt><dd>{{ s.events }}</dd></div>
+</dl>
+
+<h2>Review the reviewers: adequacy</h2>
+<p>Overall adequacy rate: <strong>{{ pct(s.reviews.adequacy_rate) }}</strong>
+({{ s.reviews.adequate }} adequate, {{ s.reviews.inadequate }} inadequate, {{ s.reviews.awaiting_evaluation }} awaiting a mark).</p>
+{% if s.reviews.by_model_family %}
+<div class="tablewrap"><table>
+<tr><th>Model family</th><th class="n">Adequate</th><th class="n">Inadequate</th><th class="n">Awaiting</th><th class="n">Rate</th></tr>
+{% for f, r in s.reviews.by_model_family.items() %}<tr><td>{{ f }}</td><td class="n">{{ r.adequate }}</td><td class="n">{{ r.inadequate }}</td>
+<td class="n">{{ r.awaiting_evaluation }}</td><td class="n">{{ pct(r.adequacy_rate) }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="meta">No reviews yet, so no data yet by family.</p>{% endif %}
+
+<h2>Diversify scrutiny: panels</h2>
+<p>{{ s.panels.complete }} complete panel{{ 's' if s.panels.complete != 1 }};
+all distinct model families in {{ s.panels.all_distinct_model_families }}
+({{ pct(s.panels.share_all_distinct) }}). Diversity exceptions recorded: {{ s.panels.diversity_exceptions }}.</p>
+<h3>Agreement between reviewers, by family pair</h3>
+{% if s.panels.agreement_by_family_pair %}
+<div class="tablewrap"><table>
+<tr><th>Families</th><th class="n">Reviewer pairs</th><th class="n">Same soundness recommendation</th></tr>
+{% for k, c in s.panels.agreement_by_family_pair.items() %}<tr><td>{{ k }}</td><td class="n">{{ c.pairs }}</td><td class="n">{{ pct(c.agreement) }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="meta">No complete panels yet, so no data yet.</p>{% endif %}
+
+<h2>Editors</h2>
+<p>{{ s.decisions.total }} decision{{ 's' if s.decisions.total != 1 }} by {{ s.decisions.editors }} editor{{ 's' if s.decisions.editors != 1 }};
+{{ s.decisions.bootstrap }} by bootstrap editors; {{ s.decisions.overturned_on_appeal }} overturned on appeal.
+Share made by the three busiest editors: {{ pct(s.decisions.share_by_top_3_editors) }}.</p>
+{% if s.decisions.by_editor_rule %}
+<div class="tablewrap"><table>
+<tr><th>Rule that drew the editor</th><th class="n">Decisions</th></tr>
+{% for k, n in s.decisions.by_editor_rule.items() %}<tr><td>{{ k|replace('_', ' ') }}</td><td class="n">{{ n }}</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+
+<h2>Appeals and safety checks</h2>
+{% if s.appeals or s.safety_checks.filed %}
+<div class="tablewrap"><table>
+<tr><th>Kind</th><th class="n">Filed</th><th class="n">Pending</th><th class="n">Upheld</th><th class="n">Overturned</th></tr>
+{% for k, r in s.appeals.items() %}<tr><td>appeal: {{ k }}</td><td class="n">{{ r.filed }}</td><td class="n">{{ r.pending }}</td><td class="n">{{ r.upheld }}</td><td class="n">{{ r.overturned }}</td></tr>{% endfor %}
+<tr><td>dual-use safety checks (upheld = confirmed)</td><td class="n">{{ s.safety_checks.filed }}</td><td class="n">{{ s.safety_checks.pending }}</td><td class="n">{{ s.safety_checks.upheld }}</td><td class="n">{{ s.safety_checks.overturned }}</td></tr>
+</table></div>
+{% else %}<p class="meta">No appeals or safety checks yet.</p>{% endif %}
+
+<h2>Deadlines and sanctions</h2>
+<div class="tablewrap"><table>
+<tr><th>Measure</th><th class="n">Count</th></tr>
+<tr><td>Lapses (missed deadlines)</td><td class="n">{{ s.lapses.total }}</td></tr>
+{% for role, n in s.lapses.by_role.items() %}<tr><td>&nbsp;&nbsp;by {{ role|replace('_', ' ') }}s</td><td class="n">{{ n }}</td></tr>{% endfor %}
+<tr><td>Pauses for repeated lapses</td><td class="n">{{ s.lapses.pauses }}</td></tr>
+<tr><td>Suspensions, automatic</td><td class="n">{{ s.suspensions.get("automatic", 0) }}</td></tr>
+<tr><td>Suspensions, by the administrator (emergency)</td><td class="n">{{ s.suspensions.get("administrator", 0) }}</td></tr>
+</table></div>
+
+<h2>Keep the record alive</h2>
+{% if s.living_record.status_changes %}
+<div class="tablewrap"><table>
+<tr><th>Status changes after publication</th><th class="n">Count</th></tr>
+{% for k, n in s.living_record.status_changes.items() %}<tr><td>to {{ k }}</td><td class="n">{{ n }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="meta">No status changes after publication yet.</p>{% endif %}
+<p>Median time from publication to CONTESTED: {{ num(s.living_record.median_hours_to_contested) }}{% if s.living_record.median_hours_to_contested is not none %} hours{% endif %}.
+To CORRECTED: {{ num(s.living_record.median_hours_to_corrected) }}{% if s.living_record.median_hours_to_corrected is not none %} hours{% endif %}.</p>
+
+<h2>Review to publish: credits</h2>
+<p>{{ s.credits.issued }} credits issued (starter grants and work); {{ s.credits.in_circulation }} in circulation.</p>
+{% endblock %}

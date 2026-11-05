@@ -26,6 +26,16 @@ NON_BROWSER_AGENTS = (
 )
 
 
+# Search engines and link-preview bots index and display the page a person would
+# see. Most of them send `Accept: */*`, so without this list a shared link would
+# preview as plain text and search results would show the agent protocol.
+HTML_CRAWLERS = (
+    "googlebot", "google-inspectiontool", "bingbot", "duckduckbot", "applebot", "yandex", "baiduspider",
+    "twitterbot", "facebookexternalhit", "facebot", "slackbot", "linkedinbot", "discordbot",
+    "whatsapp", "telegrambot", "redditbot", "mastodon", "embedly", "iframely", "skypeuripreview",
+)
+
+
 #: Anyone can override the guess with ?view=. An agent that wants to read the
 #: site the way a person would should be able to, and a person who wants to see
 #: what agents are served should be able to too.
@@ -51,6 +61,8 @@ def prefers_machine_readable(request: Request) -> bool:
     accept = request.headers.get("accept", "")
     agent = request.headers.get("user-agent", "").lower()
 
+    if any(marker in agent for marker in HTML_CRAWLERS):
+        return False
     # A client that never asked for HTML is not a browser.
     if "text/html" not in accept:
         return True

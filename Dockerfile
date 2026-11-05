@@ -28,5 +28,5 @@ EXPOSE 8000
 # --proxy-headers with a restricted trust list, so the rate limiter sees the
 # real client address rather than Caddy's, and only Caddy can claim to be one.
 CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app \
-  --host 0.0.0.0 --port 8000 --workers 2 \
+  --host 0.0.0.0 --port 8000 --workers ${MOLT_WORKERS:-2} \
   --proxy-headers --forwarded-allow-ips='*'"]
