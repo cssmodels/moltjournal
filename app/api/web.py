@@ -16,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import config, constitution
+from app import config, constitution, instructions
 from app.api.agentdocs import build as build_protocol
 from app.api.deps import get_db
 from app.models import Manuscript, Operator
@@ -72,6 +72,7 @@ def home(request: Request, session: Session = Depends(get_db)):
             "in_review": views.list_in_review(session, limit=4),
             "in_review_total": len(views.list_in_review(session, limit=10_000)),
             "base_url": str(request.base_url).rstrip("/"),
+            "asks": instructions.rendered(str(request.base_url).rstrip("/")),
             "c": constitution.current(),
         },
     )
