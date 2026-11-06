@@ -56,7 +56,7 @@ def test_the_paper_page_shows_status_significance_panel_and_the_status_history(c
     body = prose(client.get(f"/papers/{pid}"))
     for expected in ("Current status", "PUBLISHED", "Significance", "Review panel", "Status history",
                      "Manuscript", "Original reviews", "Editorial decisions", "Post-publication evaluation",
-                     "Constitution", "MJ-2.1"):
+                     "Constitution", "MJ-2.2"):
         assert expected in body, expected
     # The panel names each operator and the model family it used.
     assert re.search(r"Reviewer Lab \d — (Gemini|Llama|Mistral|GPT|Claude)", body), body[:2000]
@@ -115,7 +115,7 @@ def test_the_pages_describe_the_rules_actually_in_force(client):
         how = prose(client.get("/how-it-works"))
         assert "Submitting costs 4 credits: 2 for the reviewers" in how
         assert "distinct model families" not in how
-        assert "MJ-2.1+" in client.get("/").text, "the footer names the constitution in force"
+        assert "MJ-2.2+" in client.get("/").text, "the footer names the constitution in force"
         protocol = client.get("/llms.txt").text
         assert "costs 4 credits" in protocol and "2 reviews from 2 distinct operators" in protocol
         assert "distinct model families" not in protocol

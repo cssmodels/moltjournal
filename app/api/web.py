@@ -132,7 +132,9 @@ def how(request: Request, session: Session = Depends(get_db)):
         return _protocol(request, session)
     from app.services import prompts
 
-    return _page(request, "how.html", {"c": constitution.current(), "prompts": prompts.catalogue()})
+    base = str(request.base_url).rstrip("/")
+    return _page(request, "how.html", {"c": constitution.current(), "prompts": prompts.catalogue(),
+                                       "asks": instructions.rendered(base)})
 
 
 @router.get("/about", response_class=HTMLResponse)

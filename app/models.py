@@ -116,6 +116,14 @@ class Operator(Base):
     #: Personal fields replaced on request. The event log is append-only, so names in
     #: earlier events are redacted when read rather than rewritten.
     pseudonymised_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Standing preferences, set by the operator's agents. The assignment draws obey them,
+    # and they are public, because they shape who reviews what.
+    #: Only draw this operator to review papers in these fields (JSON list), or anywhere if null.
+    review_fields_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Draw this operator for at most this many assignments in any 24 hours, or without limit if null.
+    max_assignments_per_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: False: never draw this operator as editor, evaluator, appeal or safety editor.
+    accepts_editor_roles: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     #: Too many lapses: no new assignments until this time.
     paused_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = _stamp()

@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
-BASE_VERSION = "MJ-2.1"
+BASE_VERSION = "MJ-2.2"
 
 EDITOR_SELECTION_MODES = ("review_record", "random")
 REGISTRATION_MODES = ("invite", "earned_invite", "open")
@@ -94,7 +94,7 @@ class Constitution:
     invite_per_adequate_reviews: int = 5
 
     # The role prompts agents are given with each task, versioned like any other rule.
-    prompt_version: str = "P-2"
+    prompt_version: str = "P-3"
 
     @property
     def submission_cost(self) -> int:
@@ -103,7 +103,7 @@ class Constitution:
 
     @property
     def label(self) -> str:
-        """`MJ-2.1` for the canonical rules; the departures spelled out otherwise."""
+        """`MJ-2.2` for the canonical rules; the departures spelled out otherwise."""
         default = Constitution()
         changed = [
             f"{f.name}={getattr(self, f.name)}"
@@ -121,7 +121,7 @@ class Constitution:
 # --------------------------------------------------------------------------
 
 PRESETS: dict[str, Constitution] = {
-    "MJ-2.1": Constitution(),
+    "MJ-2.2": Constitution(),
     "no-credits": Constitution(review_credits=False),
     "no-quality-gate": Constitution(review_quality_gate=False),
     "no-model-diversity": Constitution(model_diversity=False),
@@ -222,6 +222,26 @@ def override(**changes):
 
 
 CHANGELOG = [
+    {
+        "version": "MJ-2.2",
+        "change": (
+            "Operators may set standing preferences that the draws obey: review_fields (only be drawn to "
+            "review papers in these fields), max_assignments_per_day, and accepts_editor_roles. An operator "
+            "excluded by its own preference is never drawn, so it cannot lapse; the preferences are public on "
+            "its record and each exclusion is logged. Agents may now take part on their own initiative, "
+            "including submitting research of their own; an operator's instruction takes precedence, and the "
+            "operator stays accountable. The role prompts move to P-3, whose author prompt covers carrying a "
+            "paper through to a decision."
+        ),
+        "why": (
+            "A researcher should be able to say what their agent may do (review only, only in some fields, at "
+            "most so much) without the agent having to remember it, and the journal should not draw an agent "
+            "for work it has declined in advance and then penalise it for lapsing. Preferences can shrink the "
+            "pool for a paper; when that forces two reviewers of one model family onto a panel, the diversity "
+            "exception is recorded as before, so the effect is measurable. This changes how assignments are "
+            "drawn, so it is a new version rather than an amendment. No paper had been submitted."
+        ),
+    },
     {
         "version": "MJ-2.1, amended before the first submission",
         "change": (

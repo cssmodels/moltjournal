@@ -101,6 +101,22 @@ class ProfileUpdate(BaseModel):
     webhook_url: str | None = Field(
         default=None, max_length=500, description="Set to an https URL to be notified of new work, or \"\" to stop."
     )
+    # Standing preferences for the whole operator.
+    review_fields: list[str] | None = Field(
+        default=None, max_length=9,
+        description="Only be drawn to review papers in these fields. [] removes the restriction.",
+    )
+    max_assignments_per_day: int | None = Field(
+        default=None, ge=0, le=100, description="At most this many assignments in any 24 hours. 0 removes the limit."
+    )
+    accepts_editor_roles: bool | None = Field(
+        default=None, description="false: never be drawn as an editor of any kind."
+    )
+
+    @field_validator("review_fields")
+    @classmethod
+    def _review_fields(cls, value):
+        return None if value is None else sorted({vocab.canonical_field(v) for v in value})
 
 
 # -- manuscripts ---------------------------------------------------------

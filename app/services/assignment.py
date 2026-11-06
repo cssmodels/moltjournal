@@ -113,6 +113,32 @@ def _recently_reviewed_authors(session: Session, operator_id: str, skip_manuscri
     return set(rows)
 
 
+DRAW_EVENTS = ("reviewer_assigned", "editor_assigned", "evaluator_assigned", "appeal_editor_assigned")
+
+
+def at_daily_limit(session: Session, operator: Operator) -> bool:
+    """Has this operator been drawn its preferred maximum number of times in the last 24 hours?"""
+    from app.models import Event, as_utc
+
+    limit = operator.max_assignments_per_day
+    if not limit:
+        return False
+    since = utcnow() - timedelta(hours=24)
+    recent = session.execute(
+        select(Event.created_at)
+        .where(Event.operator_id == operator.id, Event.kind.in_(DRAW_EVENTS))
+        .order_by(Event.seq.desc())
+        .limit(limit)
+    ).scalars().all()
+    return sum(1 for t in recent if as_utc(t) >= since) >= limit
+
+
+def reviews_in(operator: Operator, fields: set[str]) -> bool:
+    if not operator.review_fields_json:
+        return True
+    return bool(set(json.loads(operator.review_fields_json)) & fields)
+
+
 def _affiliation_of(session: Session, operator_id: str) -> str | None:
     return vocab.normalise_affiliation(session.get(Operator, operator_id).affiliation)
 
@@ -192,7 +218,7 @@ def editor_pool(
     reciprocal = _reciprocal_partners(session, manuscript.operator_id)
     author_affiliation = _affiliation_of(session, manuscript.operator_id)
 
-    counts = {"same_operator": 0, "affiliation": 0, "reciprocal": 0, "reviewer": 0}
+    counts = {"same_operator": 0, "affiliation": 0, "reciprocal": 0, "reviewer": 0, "preference": 0}
     candidates: dict[str, list[Agent]] = {}
     for agent in _active_agents(session):
         candidates.setdefault(agent.operator_id, []).append(agent)
@@ -208,6 +234,8 @@ def editor_pool(
             counts["reciprocal"] += 1
         elif operator_id in reviewers:
             counts["reviewer"] += 1
+        elif not operator.accepts_editor_roles or at_daily_limit(session, operator):
+            counts["preference"] += 1
         elif not record.appeals_eligible(session, operator_id):
             continue
         else:
@@ -406,7 +434,8 @@ def eligible_reviewers(session: Session, manuscript: Manuscript, status: dict) -
     # The author reviewed these operators recently; they may not now review the author.
     reviewed_by_author = _recently_reviewed_authors(session, manuscript.operator_id, manuscript.id)
 
-    counts = {"excluded": 0, "affiliation": 0, "reciprocal_review": 0}
+    counts = {"excluded": 0, "affiliation": 0, "reciprocal_review": 0, "preference": 0}
+    fields = manuscript_fields(latest_version(session, manuscript))
     verdict: dict[str, str | None] = {}
     pool: list[Agent] = []
     for agent in _active_agents(session):
@@ -418,6 +447,8 @@ def eligible_reviewers(session: Session, manuscript: Manuscript, status: dict) -
                 verdict[op] = "affiliation"
             elif op in reviewed_by_author:
                 verdict[op] = "reciprocal_review"
+            elif not reviews_in(session.get(Operator, op), fields) or at_daily_limit(session, session.get(Operator, op)):
+                verdict[op] = "preference"
             else:
                 verdict[op] = None
             if verdict[op]:

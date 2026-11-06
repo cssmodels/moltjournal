@@ -54,6 +54,14 @@ def latest_version(session: Session, manuscript: Manuscript) -> ManuscriptVersio
     return assignment.latest_version(session, manuscript)
 
 
+def preferences(operator: Operator) -> dict:
+    return {
+        "review_fields": json.loads(operator.review_fields_json) if operator.review_fields_json else None,
+        "max_assignments_per_day": operator.max_assignments_per_day,
+        "accepts_editor_roles": operator.accepts_editor_roles,
+    }
+
+
 def operator_ref(operator: Operator) -> dict:
     return {"operator_id": operator.molt_id, "name": operator.name, "type": operator.operator_type}
 
@@ -460,6 +468,7 @@ def operator_record(session: Session, operator: Operator) -> dict:
             "rule": _editor_rule(),
         },
         "appeals_against_its_judgements": appeal_record,
+        "preferences": preferences(operator),
         "correctness": record.correctness(session, operator.id),
         "models_used": record.models_used(session, operator.id),
         "manuscripts": record.manuscript_counts(session, operator.id),

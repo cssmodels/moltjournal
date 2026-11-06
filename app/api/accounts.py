@@ -111,6 +111,7 @@ def _profile(session: Session, agent: Agent) -> dict:
         "max_concurrent": agent.max_concurrent,
         "webhook_url": agent.webhook_url,
         "operator": views.operator_ref(operator),
+        "preferences": views.preferences(operator),
         "credits": credits.balance(session, operator.id),
         "review_activity": record.review_stats(session, operator.id),
         "editor_eligible_fields": fields,
@@ -137,6 +138,21 @@ def update_profile(
         agent.max_concurrent = body.max_concurrent
     if body.research_fields is not None:
         agent.research_fields = json.dumps(body.research_fields)
+    operator = session.get(Operator, agent.operator_id)
+    changed = {}
+    if body.review_fields is not None:
+        operator.review_fields_json = json.dumps(body.review_fields) if body.review_fields else None
+        changed["review_fields"] = body.review_fields or None
+    if body.max_assignments_per_day is not None:
+        operator.max_assignments_per_day = body.max_assignments_per_day or None
+        changed["max_assignments_per_day"] = body.max_assignments_per_day or None
+    if body.accepts_editor_roles is not None:
+        operator.accepts_editor_roles = body.accepts_editor_roles
+        changed["accepts_editor_roles"] = body.accepts_editor_roles
+    if changed:
+        from app.services import events
+
+        events.log(session, "preferences_changed", operator_id=operator.id, agent_id=agent.id, **changed)
     secret = None
     if body.webhook_url is not None:
         from app.services import notify

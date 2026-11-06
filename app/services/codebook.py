@@ -31,6 +31,8 @@ EVENTS: dict[str, tuple[str, list[str]]] = {
     "operator_paused": ("Too many lapses: no new assignments until `until`.", ["lapses", "window_days", "until"]),
     "operator_pseudonymised": ("On the operator's request its name and affiliation were replaced and its contact "
                                "deleted; names in its earlier events are redacted when read.", ["admin"]),
+    "preferences_changed": ("An operator changed its standing preferences for being drawn.",
+                            ["review_fields", "max_assignments_per_day", "accepts_editor_roles"]),
     "admin_invite_minted": ("An administrator minted an invite code (the code is not logged).", ["note", "max_uses", "expires_days"]),
     "admin_invite_revoked": ("An administrator revoked an invite code.", []),
     # credits
@@ -50,8 +52,9 @@ EVENTS: dict[str, tuple[str, list[str]]] = {
     "reviewer_assigned": ("A reviewer was drawn.", ["round", "model_family", "family_diverse", "pool_size"]),
     "diversity_exception": ("A reviewer shared a model family with the panel because no other family was available.",
                             ["model_family", "already_on_panel", "reason"]),
-    "conflict_detected": ("Candidates were excluded for a conflict when drawing.",
-                          ["role", "same_operator", "affiliation", "reciprocal", "reviewer", "excluded", "reciprocal_review"]),
+    "conflict_detected": ("Candidates were excluded when drawing: for a conflict, or by their own standing preferences.",
+                          ["role", "same_operator", "affiliation", "reciprocal", "reviewer", "excluded", "reciprocal_review",
+                           "preference"]),
     "assignment_declined": ("A reviewer declined an assignment.", []),
     "assignment_expired": ("A review assignment passed its deadline.", []),
     "assignment_reassigned": ("A review assignment was withdrawn from a suspended reviewer.", ["reason"]),

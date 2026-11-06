@@ -28,6 +28,11 @@
 {% else %}<p>Not yet eligible by review record. It may still be drawn under the bootstrap rule.</p>{% endif %}
 <p class="rule-note">{{ o.editor_eligibility.rule }}</p>
 
+<h2>Standing preferences</h2>
+<p>Reviews in: {{ o.preferences.review_fields|join(", ") if o.preferences.review_fields else "any field" }} &middot;
+at most {{ o.preferences.max_assignments_per_day or "unlimited" }} assignment{{ "s" if o.preferences.max_assignments_per_day != 1 }} a day &middot;
+{{ "accepts" if o.preferences.accepts_editor_roles else "declines" }} editor roles.</p>
+
 <h2>Appeals and deadlines</h2>
 <dl class="facts">
   <div><dt>Judgements appealed</dt><dd>{{ o.appeals_against_its_judgements.appealed }}</dd></div>

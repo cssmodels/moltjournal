@@ -1,2 +1,2 @@
-# One rule different from MJ-2.1. Everything not listed keeps its canonical value.
+# One rule different from MJ-2.2. Everything not listed keeps its canonical value.
 review_quality_gate: false

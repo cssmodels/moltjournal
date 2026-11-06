@@ -10,19 +10,19 @@ from tests.helpers import Journal, credits, paper
 
 
 def test_the_canonical_rules_carry_the_plain_version_label():
-    assert Constitution().label == "MJ-2.1"
-    assert constitution.current().label == "MJ-2.1"
+    assert Constitution().label == "MJ-2.2"
+    assert constitution.current().label == "MJ-2.2"
 
 
 def test_a_variant_says_exactly_what_it_changes():
     c = Constitution(review_credits=False, model_diversity=False)
-    assert c.label == "MJ-2.1+review_credits=False,model_diversity=False"
+    assert c.label == "MJ-2.2+review_credits=False,model_diversity=False"
 
 
 def test_every_preset_differs_from_the_canonical_rules_in_exactly_one_way():
     base = Constitution().as_dict()
     for name, c in PRESETS.items():
-        if name == "MJ-2.1":
+        if name == "MJ-2.2":
             continue
         # submission_cost is derived from the others, not a rule of its own
         differing = [k for k, v in c.as_dict().items() if k not in ("label", "submission_cost") and v != base[k]]
@@ -46,7 +46,7 @@ def test_a_json_file_and_a_preset_name_both_load(tmp_path):
     path.write_text(json.dumps({"reviews_required": 5}))
     assert constitution.load(str(path)).reviews_required == 5
     assert constitution.load("no-credits").review_credits is False
-    assert constitution.load("") is PRESETS["MJ-2.1"]
+    assert constitution.load("") is PRESETS["MJ-2.2"]
 
 
 @pytest.mark.parametrize("bad", [{"editor_selection": "lottery"}, {"reviews_required": 0}, {"nonsense": 1}, {"editor_min_adequacy_rate": 3}, {"max_revision_requests": -1}, {"max_rounds": 3}])
@@ -68,8 +68,8 @@ def test_every_manuscript_records_the_rules_it_was_submitted_under(client):
         from tests.helpers import grant
         grant(j.author, 4)
         new = j.submit("Submitted later under a different number of reviewers")
-    assert paper(client, old)["constitution_version"] == "MJ-2.1"
-    assert paper(client, new)["constitution_version"] == "MJ-2.1+reviews_required=2"
+    assert paper(client, old)["constitution_version"] == "MJ-2.2"
+    assert paper(client, new)["constitution_version"] == "MJ-2.2+reviews_required=2"
     # And the first paper keeps its three reviewers: the rules never change retrospectively.
     assert paper(client, old)["panel_progress"]["required"] == 3
     assert paper(client, new)["panel_progress"]["required"] == 2
@@ -79,7 +79,7 @@ def test_every_logged_event_carries_the_constitution_in_force(client):
     j = Journal(client)
     j.publish()
     events = client.get("/api/events", params={"limit": 1000}).json()["events"]
-    assert events and {e["constitution_version"] for e in events} == {"MJ-2.1"}
+    assert events and {e["constitution_version"] for e in events} == {"MJ-2.2"}
 
 
 def test_with_the_quality_gate_off_every_review_counts_and_no_evaluation_is_needed(client):
@@ -103,6 +103,6 @@ def test_a_different_number_of_required_reviewers_changes_the_price_and_the_pane
 
 def test_the_constitution_is_public_and_readable_by_machines(client):
     body = client.get("/api/constitution").json()
-    assert body["current"]["label"] == "MJ-2.1"
+    assert body["current"]["label"] == "MJ-2.2"
     assert body["current"]["reviews_required"] == 3
     assert body["changelog"]

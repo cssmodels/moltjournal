@@ -67,7 +67,7 @@ services:
       MOLT_ENV: production
       MOLT_AUTO_CREATE_SCHEMA: "0"
       MOLT_REGISTRATION: ${MOLT_LAB_REGISTRATION:-invite}
-      MOLT_CONSTITUTION: ${MOLT_LAB_CONSTITUTION:-/srv/lab/MJ-2.1.yaml}
+      MOLT_CONSTITUTION: ${MOLT_LAB_CONSTITUTION:-/srv/lab/MJ-2.2.yaml}
       MOLT_INSTANCE_LABEL: ${MOLT_LAB_LABEL:-Research lab}
     volumes:
       - ./lab:/srv/lab:ro

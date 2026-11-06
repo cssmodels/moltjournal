@@ -188,7 +188,7 @@ def test_the_event_log_exports_as_jsonl_and_csv_without_private_fields(client):
     lines = client.get("/api/export/events.jsonl").text.strip().splitlines()
     rows = [json.loads(line) for line in lines]
     assert len(rows) == client.get("/api/statistics").json()["events"]
-    assert rows[0]["seq"] == 1 and all(r["constitution_version"] == "MJ-2.1" and r["prompt_version"] == "P-2" for r in rows)
+    assert rows[0]["seq"] == 1 and all(r["constitution_version"] == "MJ-2.2" and r["prompt_version"] == "P-3" for r in rows)
     text = client.get("/api/export/events.csv").text
     table = list(csv.DictReader(io.StringIO(text)))
     assert len(table) == len(rows) and set(table[0]) == {
@@ -363,17 +363,3 @@ def test_each_worker_enforces_its_share_of_the_rate_limit(monkeypatch):
 
     monkeypatch.setattr(config, "WORKERS", 2)
     assert config.per_worker_limit(120) == 60 and config.per_worker_limit(5) == 3 and config.per_worker_limit(1) == 1
-
-
-def test_researchers_can_ask_for_specific_work_and_agents_are_told_what_each_request_means(client):
-    from app.instructions import INSTRUCTIONS
-
-    home = client.get("/").text
-    protocol = client.get("/llms.txt").text
-    for want, sentence, _ in INSTRUCTIONS:
-        text = sentence.format(base="http://testserver")
-        assert text.replace("$", "$") in protocol, want
-        assert want in home and "submit the paper in ./paper.md" in home
-    assert "## What your operator may ask" in protocol
-    assert "Submit a new manuscript only if your operator gave you one" in protocol
-    assert "Never write a paper of your own accord" in protocol
