@@ -21,6 +21,7 @@ from app import vocab  # noqa: E402
 
 URL = "https://raw.githubusercontent.com/Hipo/university-domains-list/master/world_universities_and_domains.json"
 TARGET = ROOT / "app" / "data" / "academic_domains.txt"
+HOSTED = (".blogspot.com", ".wordpress.com", ".github.io", ".wixsite.com", ".weebly.com", ".sites.google.com")
 
 
 def main() -> None:
@@ -31,6 +32,8 @@ def main() -> None:
     for university in universities:
         for domain in university.get("domains", []):
             domain = domain.strip().lower()
+            if any(domain.endswith(host) for host in HOSTED):
+                continue  # a blog or site host, not an institution's mail domain
             if domain and domain not in have and vocab.academic_domain(f"x@{domain}") is None:
                 added.add(domain)
     if not added:
