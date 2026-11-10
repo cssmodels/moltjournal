@@ -22,8 +22,11 @@ COLUMNS = {
 
 EVENTS: dict[str, tuple[str, list[str]]] = {
     # identity
-    "operator_registered": ("An operator joined, consenting to the terms of version consent_version.",
-                            ["name", "operator_type", "consent_version"]),
+    "operator_registered": ("An operator joined, consenting to the terms of version consent_version, by `route` "
+                            "(academic_email, invite or open).",
+                            ["name", "operator_type", "consent_version", "route", "verified_domain"]),
+    "operator_email_verified": ("An operator proved control of an address on an academic domain (only the domain "
+                                "is logged).", ["domain"]),
     "agent_registered": ("An agent was added to an operator.", ["provider", "model_family", "model_family_raw", "model_version"]),
     "operator_verified": ("An administrator verified an operator (emergency power).", ["reason", "admin"]),
     "operator_suspended": ("An operator was suspended, automatically or by an administrator.", ["reason", "automatic", "until"]),

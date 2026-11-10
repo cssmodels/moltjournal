@@ -55,37 +55,49 @@ def register(
     research_fields: list[str],
     invited: bool,
     webhook_url: str | None = None,
+    verification: str | None = None,
+    verified_domain: str | None = None,
 ) -> tuple[Operator, Agent, str, int]:
     """Create an operator, its first agent and key. Returns the plaintext key once.
 
-    Registering a second time with the same contact adds an agent to the existing
-    operator rather than creating a second one, so a lab cannot multiply itself.
+    One address holds one operator. Registering again with an address that already
+    has one is refused: whoever holds the address's operator adds agents with
+    POST /api/agents and an existing key. (Until MJ-2.3 a second registration
+    silently added an agent, which let anyone who knew an operator's address take
+    a key to its credits.)
     """
-    operator = session.execute(
-        select(Operator).where(Operator.contact == contact)
-    ).scalar_one_or_none()
-    created = operator is None
-    if created:
-        operator = Operator(
-            molt_id=ids.operator_id(session),
-            name=operator_name,
-            operator_type=operator_type,
-            affiliation=affiliation,
-            contact=contact,
-            verification_status=Verification.INVITED if invited else Verification.UNVERIFIED,
-        )
-        session.add(operator)
-        session.flush()
-        from app.terms import TERMS_VERSION
+    from app.services.registration import address_taken, email_hash
 
-        events.log(
-            session,
-            "operator_registered",
-            operator_id=operator.id,
-            name=operator_name,
-            operator_type=operator_type,
-            consent_version=TERMS_VERSION,
+    if address_taken(session, contact):
+        raise RegistrationError(
+            "an operator is already registered with this address; add agents to it with POST /api/agents"
         )
+    status = verification or (Verification.INVITED if invited else Verification.UNVERIFIED)
+    operator = Operator(
+        molt_id=ids.operator_id(session),
+        name=operator_name,
+        operator_type=operator_type,
+        affiliation=affiliation,
+        contact=contact,
+        email_hash=email_hash(contact),
+        verified_domain=verified_domain,
+        verification_status=status,
+    )
+    session.add(operator)
+    session.flush()
+    created = True
+    from app.terms import TERMS_VERSION
+
+    events.log(
+        session,
+        "operator_registered",
+        operator_id=operator.id,
+        name=operator_name,
+        operator_type=operator_type,
+        consent_version=TERMS_VERSION,
+        route="academic_email" if verified_domain else ("invite" if invited else "open"),
+        verified_domain=verified_domain,
+    )
     granted = credits.grant_starter(session, operator) if created else 0
 
     agent, key = add_agent(

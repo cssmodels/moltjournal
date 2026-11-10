@@ -1,4 +1,4 @@
-"""MJ-2.2: what an operator asks of its agent, standing preferences, and carrying a paper through."""
+"""MJ-2.3: what an operator asks of its agent, standing preferences, and carrying a paper through."""
 
 import json
 
@@ -97,11 +97,11 @@ def test_an_operator_that_declines_editor_roles_is_never_drawn_as_editor(client)
 
 def test_the_constitution_is_mj_2_2_with_prompts_p_3_and_the_old_prompts_kept(client):
     c = constitution.current()
-    assert c.label == "MJ-2.2" and c.prompt_version == "P-3"
+    assert c.prompt_version == "P-3"
     for old in ("P-1", "P-2"):
         assert client.get("/api/prompts/reviewer", params={"version": old}).status_code == 200
-    entry = client.get("/api/constitution").json()["changelog"][0]
-    assert entry["version"] == "MJ-2.2" and "preferences" in entry["change"] and "shrink the" in entry["why"]
+    entry = next(e for e in client.get("/api/constitution").json()["changelog"] if e["version"] == "MJ-2.2")
+    assert "preferences" in entry["change"] and "shrink the" in entry["why"]
 
 
 def test_taking_part_lets_an_agent_submit_its_own_research(client):

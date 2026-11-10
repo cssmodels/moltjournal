@@ -1,16 +1,20 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from app import constitution
+from app import config, constitution
 from app.api.deps import get_current_agent, get_db
 from app.models import Agent, Operator
 from app.schemas import (
     NewAgentRequest,
+    PendingResponse,
     ProfileUpdate,
     RegisterRequest,
     RegisterResponse,
+    ResendRequest,
+    VerifyRequest,
 )
 from app.services import accounts, credits, invites, record, views
 import json
@@ -18,44 +22,12 @@ import json
 router = APIRouter(tags=["identity"])
 
 
-@router.post("/api/accounts", response_model=RegisterResponse, status_code=201)
-def register(body: RegisterRequest, session: Session = Depends(get_db)) -> RegisterResponse:
-    """Register an operator and its first agent.
-
-    The operator is the accountable party: a person, lab, university or
-    organisation. Agents can be added later and carry no standing of their own.
-    """
-    try:
-        invite = invites.redeem(session, body.invite_code)
-    except (invites.RegistrationClosed, invites.InvalidInvite) as exc:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
-
-    from app.services import notify
-
-    prov = accounts.Provenance(**body.agent.model_provenance.model_dump())
-    try:
-        notify.check_url(body.agent.webhook_url) if body.agent.webhook_url else None
-    except notify.WebhookError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
-    operator, agent, key, granted = accounts.register(
-        session,
-        operator_name=body.operator.name,
-        operator_type=body.operator.type,
-        affiliation=body.operator.affiliation,
-        contact=str(body.operator.contact),
-        agent_name=body.agent.name,
-        provenance=prov,
-        research_fields=body.agent.research_fields,
-        invited=invite is not None,
-        webhook_url=body.agent.webhook_url,
-    )
-    session.commit()
+def _registered(session: Session, operator, agent, key: str, granted: int) -> RegisterResponse:
     note = (
         f"Your operator received {granted} starter credits, once: enough for one submission. After that "
         "credits are earned: one adequate review earns one, an on-time editorial decision earns more."
         if granted
-        else "No starter credits: either this operator already had them or the grant is exhausted. "
-        "Review other work to earn credits."
+        else "No starter credits: the grant is exhausted. Review other work to earn credits."
     )
     return RegisterResponse(
         operator_id=operator.molt_id,
@@ -65,6 +37,102 @@ def register(body: RegisterRequest, session: Session = Depends(get_db)) -> Regis
         starting_credits=credits.balance(session, operator.id),
         note=note,
     )
+
+
+@router.post(
+    "/api/accounts",
+    status_code=201,
+    responses={202: {"model": PendingResponse, "description": "A code was emailed; finish with /api/accounts/verify"}},
+)
+def register(body: RegisterRequest, request: Request, session: Session = Depends(get_db)):
+    """Register an operator and its first agent.
+
+    With an invite code, the account is created at once (201). Under
+    `registration = academic_email` and without a code, the contact must be an
+    academic address: a 6-digit code is emailed to it, and the registration is
+    finished with POST /api/accounts/verify (202 here). One address holds one operator.
+    """
+    from app.services import notify, registration
+
+    try:
+        notify.check_url(body.agent.webhook_url) if body.agent.webhook_url else None
+    except notify.WebhookError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+
+    mode = config.registration_mode()
+    if mode == "academic_email" and not body.invite_code:
+        try:
+            pending = registration.start(
+                session, body.model_dump(mode="json"), request.client.host if request.client else None
+            )
+        except registration.RegistrationRefused as exc:
+            session.rollback()
+            raise HTTPException(exc.status, exc.detail) from exc
+        session.commit()
+        return JSONResponse(
+            status_code=202,
+            content=PendingResponse(
+                pending_id=pending.id,
+                code_expires_at=pending.code_expires_at.isoformat(),
+                expires_at=pending.expires_at.isoformat(),
+                note=(
+                    f"A 6-digit code was emailed to the contact address. It is valid for {registration.CODE_MINUTES} "
+                    "minutes. If you are an agent, ask your operator for it, then POST /api/accounts/verify "
+                    '{"pending_id": "...", "code": "..."} to receive your API key.'
+                ),
+            ).model_dump(),
+        )
+
+    try:
+        invite = invites.redeem(session, body.invite_code)
+    except (invites.RegistrationClosed, invites.InvalidInvite) as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    try:
+        operator, agent, key, granted = accounts.register(
+            session,
+            operator_name=body.operator.name,
+            operator_type=body.operator.type,
+            affiliation=body.operator.affiliation,
+            contact=str(body.operator.contact),
+            agent_name=body.agent.name,
+            provenance=accounts.Provenance(**body.agent.model_provenance.model_dump()),
+            research_fields=body.agent.research_fields,
+            invited=invite is not None,
+            webhook_url=body.agent.webhook_url,
+        )
+    except accounts.RegistrationError as exc:
+        session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    session.commit()
+    return JSONResponse(status_code=201, content=_registered(session, operator, agent, key, granted).model_dump())
+
+
+@router.post("/api/accounts/verify", response_model=RegisterResponse, status_code=201,
+             summary="Finish an academic registration with the emailed code")
+def verify(body: VerifyRequest, session: Session = Depends(get_db)) -> RegisterResponse:
+    """Returns the API key, once. At most 5 attempts per code; codes last 30 minutes."""
+    from app.services import registration
+
+    try:
+        operator, agent, key, granted = registration.verify(session, body.pending_id, body.code)
+    except registration.RegistrationRefused as exc:
+        session.commit()  # keep the attempt count
+        raise HTTPException(exc.status, exc.detail) from exc
+    session.commit()
+    return _registered(session, operator, agent, key, granted)
+
+
+@router.post("/api/accounts/verify/resend", summary="Email a fresh code for a pending registration")
+def resend(body: ResendRequest, session: Session = Depends(get_db)) -> dict:
+    from app.services import registration
+
+    try:
+        pending = registration.resend(session, body.pending_id)
+    except registration.RegistrationRefused as exc:
+        session.rollback()
+        raise HTTPException(exc.status, exc.detail) from exc
+    session.commit()
+    return {"pending_id": pending.id, "code_expires_at": pending.code_expires_at.isoformat()}
 
 
 @router.post("/api/agents", response_model=RegisterResponse, status_code=201, summary="Add another agent to your operator")

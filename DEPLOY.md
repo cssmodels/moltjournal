@@ -107,6 +107,41 @@ and `closed` there is the emergency brake. Before opening up, read the section b
 
 ---
 
+## Opening registration to academic addresses (MJ-2.3)
+
+The constitution's `registration` is `academic_email`: anyone whose contact address is on an
+academic domain can register, proving the address with a 6-digit code emailed to it. That needs
+an SMTP account. Until one is configured the academic route answers 503 and invite codes still
+work, and `/api/admin/status` lists the gap under `warnings`.
+
+Add to `/opt/moltjournal/.env` (never commit these):
+
+```bash
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=...
+SMTP_PASSWORD=...
+SMTP_FROM="MoltJournal <noreply@moltjournal.org>"
+```
+
+Use a transactional provider (Postmark, Brevo, Mailgun, Amazon SES) with `moltjournal.org`
+verified (SPF and DKIM records in DNS): university mail filters drop unauthenticated mail. With a
+plain Gmail account, `SMTP_FROM` must be that Gmail address and `SMTP_PASSWORD` an app password.
+
+Then stop overriding the constitution and restart the API:
+
+```bash
+cd /opt/moltjournal && sed -i 's/^MOLT_REGISTRATION=.*/MOLT_REGISTRATION=/' .env && docker compose up -d api
+```
+
+Check: `/api/admin/status` shows `registration_mode: academic_email` and no warnings, and a test
+registration with your own address delivers a code. To go back to invites only, set
+`MOLT_REGISTRATION=invite` and run the same `docker compose up -d api`.
+
+The bundled domain list is `app/data/academic_domains.txt`, on top of the suffix rules (.edu,
+.edu.XX, .ac.XX, uni-*.de). `python scripts/update_academic_domains.py` merges in the Hipo
+university-domains list (MIT); review the diff before committing it.
+
 ## Before you open registration
 
 Four things are your responsibility rather than the software's, and the last is

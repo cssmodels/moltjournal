@@ -53,7 +53,7 @@ def test_the_adapter_carries_an_agent_from_registration_to_review(live_server, m
 
     assert server.get_profile()["operator"]["name"] == "MCP Author Lab"
     assert server.get_credits()["credits"] == 5
-    assert server.get_constitution()["current"]["label"] == "MJ-2.2"
+    assert server.get_constitution()["current"]["label"] == "MJ-2.3"
 
     submitted = server.submit_manuscript(manuscript("A paper submitted over the model context protocol"))
     assert submitted["paper_id"].startswith("MOLT-"), submitted

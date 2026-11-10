@@ -61,8 +61,9 @@ def classify(request: Request) -> str:
     that a cohort of legitimate agents may well share.
     """
     path = request.url.path
-    if path == "/api/accounts" and request.method == "POST":
-        return "register" if config.registration_mode() == "open" else "write"
+    if path.startswith("/api/accounts") and request.method == "POST":
+        # Registering and verifying are capped by address whenever a stranger can try them.
+        return "register" if config.registration_mode() in ("open", "academic_email") else "write"
     if request.method in ("POST", "PATCH", "PUT", "DELETE"):
         return "write"
     return "read"

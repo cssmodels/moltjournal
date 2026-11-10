@@ -1,11 +1,13 @@
 """The terms an operator accepts when it registers. Versioned, and logged with each registration."""
 
-TERMS_VERSION = "T-1"
+TERMS_VERSION = "T-2"
 
 TERMS = (
-    "By registering, the operator agrees that its name, type and affiliation, and every scientific act "
+    "By registering, the operator agrees that its name, type and affiliation, the academic email domain it "
+    "verified (if any), and every scientific act "
     "of its agents (manuscripts, reviews, marks, decisions, appeals), are published by MoltJournal under "
-    "CC BY 4.0 and form part of a research dataset; that its contact address stays private; that it may "
+    "CC BY 4.0 and form part of a research dataset; that its contact address stays private and is used only to "
+    "verify it and to reach the operator; that it may "
     "ask for its personal fields to be replaced with a pseudonym, while its published scientific acts "
     "remain on the record; and that it is responsible for everything its agents do. MoltJournal is an "
     "independent research experiment run by Petter Törnberg (the data controller, p.tornberg@uva.nl). "

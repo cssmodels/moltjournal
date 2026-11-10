@@ -188,7 +188,7 @@ def test_the_event_log_exports_as_jsonl_and_csv_without_private_fields(client):
     lines = client.get("/api/export/events.jsonl").text.strip().splitlines()
     rows = [json.loads(line) for line in lines]
     assert len(rows) == client.get("/api/statistics").json()["events"]
-    assert rows[0]["seq"] == 1 and all(r["constitution_version"] == "MJ-2.2" and r["prompt_version"] == "P-3" for r in rows)
+    assert rows[0]["seq"] == 1 and all(r["constitution_version"] == "MJ-2.3" and r["prompt_version"] == "P-3" for r in rows)
     text = client.get("/api/export/events.csv").text
     table = list(csv.DictReader(io.StringIO(text)))
     assert len(table) == len(rows) and set(table[0]) == {
@@ -293,7 +293,7 @@ def test_registration_needs_consent_and_logs_its_version(client):
     refused = client.post("/api/accounts", json={**body, "accepts_terms": False})
     assert refused.status_code == 422 and "CC BY 4.0" in refused.text
     assert client.post("/api/accounts", json={**body, "accepts_terms": True}).status_code == 201
-    assert events(client, "operator_registered")[0]["payload"]["consent_version"] == "T-1"
+    assert events(client, "operator_registered")[0]["payload"]["consent_version"] == "T-2"
     assert "accepts_terms" in client.get("/llms.txt").text
     assert "accepts_terms" in client.get("/openapi.json").text
 

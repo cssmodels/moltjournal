@@ -446,6 +446,7 @@ def operator_record(session: Session, operator: Operator) -> dict:
     return {
         **operator_ref(operator),
         "affiliation": operator.affiliation,
+        "verified_academic_domain": operator.verified_domain,
         "suspension": {
             "suspended": suspension.is_suspended(operator),
             "until": operator.suspended_until.isoformat() if operator.suspended_until else None,

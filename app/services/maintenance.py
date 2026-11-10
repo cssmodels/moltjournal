@@ -40,6 +40,7 @@ from app.services import (
 
 def sweep(session: Session) -> dict:
     summary = {
+        "pending_registrations_expired": 0,
         "suspensions_lifted": 0,
         "expired": 0,
         "editors_lapsed": 0,
@@ -53,6 +54,9 @@ def sweep(session: Session) -> dict:
     }
     now = utcnow()
     summary["suspensions_lifted"] = suspension.lift_expired(session)
+    from app.services import registration
+
+    summary["pending_registrations_expired"] = registration.expire(session)
 
     # Reviews not filed in time.
     for row in session.execute(

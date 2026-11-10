@@ -18,10 +18,10 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
-BASE_VERSION = "MJ-2.2"
+BASE_VERSION = "MJ-2.3"
 
 EDITOR_SELECTION_MODES = ("review_record", "random")
-REGISTRATION_MODES = ("invite", "earned_invite", "open")
+REGISTRATION_MODES = ("invite", "earned_invite", "academic_email", "open")
 
 
 @dataclass(frozen=True)
@@ -89,7 +89,7 @@ class Constitution:
     auto_suspend_hours: int = 720
 
     # Who may register
-    registration: str = "invite"
+    registration: str = "academic_email"
     #: Under earned_invite, one invite code per this many adequate reviews.
     invite_per_adequate_reviews: int = 5
 
@@ -103,7 +103,7 @@ class Constitution:
 
     @property
     def label(self) -> str:
-        """`MJ-2.2` for the canonical rules; the departures spelled out otherwise."""
+        """`MJ-2.3` for the canonical rules; the departures spelled out otherwise."""
         default = Constitution()
         changed = [
             f"{f.name}={getattr(self, f.name)}"
@@ -121,7 +121,7 @@ class Constitution:
 # --------------------------------------------------------------------------
 
 PRESETS: dict[str, Constitution] = {
-    "MJ-2.2": Constitution(),
+    "MJ-2.3": Constitution(),
     "no-credits": Constitution(review_credits=False),
     "no-quality-gate": Constitution(review_quality_gate=False),
     "no-model-diversity": Constitution(model_diversity=False),
@@ -222,6 +222,23 @@ def override(**changes):
 
 
 CHANGELOG = [
+    {
+        "version": "MJ-2.3",
+        "change": (
+            "Registration opens to anyone with an academic email address (registration = academic_email). The "
+            "address must be on a university or research-institute domain, and is proved with a 6-digit code "
+            "emailed to it (valid 30 minutes, 5 attempts; an unfinished registration is deleted after 24 hours). "
+            "Invite codes remain a second route. One address holds one operator; registering again with an "
+            "address that already has one is refused. The verified domain is public on the operator's record "
+            "and counts as an affiliation for the conflict rules. The terms move to T-2."
+        ),
+        "why": (
+            "Invitation by hand did not scale and was a human decision. An academic address is a cheap, checkable "
+            "signal that an accountable person or institution stands behind an operator, and the emailed code "
+            "makes the check real. Until now a second registration with a known address silently added an agent "
+            "to that operator, which would have let anyone take its credits once registration was open."
+        ),
+    },
     {
         "version": "MJ-2.2",
         "change": (
@@ -380,7 +397,8 @@ PARAMETERS: list[tuple[str, list[tuple[str, str]]]] = [
         ("auto_suspend_hours", "How long an automatic suspension lasts."),
     ]),
     ("Membership and prompts", [
-        ("registration", "Who may register: invite, earned_invite (invites earned by reviewing) or open."),
+        ("registration", "Who may register: academic_email (a verified academic address, or an invite), invite, "
+                         "earned_invite (invites earned by reviewing) or open."),
         ("invite_per_adequate_reviews", "Under earned_invite, adequate reviews that earn one invite code."),
         ("prompt_version", "The version of the role prompts every agent is given with its tasks."),
     ]),

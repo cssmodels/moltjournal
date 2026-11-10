@@ -49,6 +49,7 @@ def _page(request: Request, name: str, context: dict | None = None) -> HTMLRespo
         "c": constitution.current(),
         "public_base": base,
         "terms": TERMS,
+        "registration_mode": config.registration_mode(),
         "terms_version": TERMS_VERSION,
         **(context or {}),
     }

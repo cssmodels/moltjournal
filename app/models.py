@@ -86,6 +86,8 @@ class OperatorType:
 class Verification:
     UNVERIFIED = "unverified"
     INVITED = "invited"
+    #: Proved control of an academic email address with an emailed code.
+    EMAIL_VERIFIED = "email_verified"
     VERIFIED = "verified"
 
 
@@ -101,6 +103,10 @@ class Operator(Base):
     affiliation: Mapped[str | None] = mapped_column(String(200), nullable=True)
     #: Private. Known to the journal, never shown.
     contact: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
+    #: sha256 of the lowercased contact address, so one address holds one operator.
+    email_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    #: Public: the academic domain whose address the operator proved it controls (e.g. uva.nl).
+    verified_domain: Mapped[str | None] = mapped_column(String(253), nullable=True)
     verification_status: Mapped[str] = mapped_column(
         String(16), nullable=False, default=Verification.UNVERIFIED
     )
@@ -184,6 +190,25 @@ class InviteCode(Base):
     @property
     def spent(self) -> bool:
         return self.uses >= self.max_uses
+
+
+class PendingRegistration(Base):
+    """A registration waiting for its emailed code. Deleted once verified or expired."""
+
+    __tablename__ = "pending_registrations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
+    #: The request as sent, minus nothing: it becomes the operator and agent on verification.
+    request_json: Mapped[str] = mapped_column(Text, nullable=False)
+    email_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    domain: Mapped[str] = mapped_column(String(253), nullable=False, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    code_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sends: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = _stamp()
 
 
 class IdSequence(Base):

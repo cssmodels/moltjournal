@@ -139,8 +139,15 @@ def reviews_in(operator: Operator, fields: set[str]) -> bool:
     return bool(set(json.loads(operator.review_fields_json)) & fields)
 
 
-def _affiliation_of(session: Session, operator_id: str) -> str | None:
-    return vocab.normalise_affiliation(session.get(Operator, operator_id).affiliation)
+def _affiliation_of(session: Session, operator_id: str) -> set[str]:
+    """What an operator is affiliated with: its stated affiliation and its verified email domain."""
+    operator = session.get(Operator, operator_id)
+    marks = set()
+    if vocab.normalise_affiliation(operator.affiliation):
+        marks.add("text:" + vocab.normalise_affiliation(operator.affiliation))
+    if operator.verified_domain:
+        marks.add("domain:" + operator.verified_domain)
+    return marks
 
 
 def _manuscript_reviewers(session: Session, manuscript: Manuscript) -> set[str]:
@@ -228,7 +235,7 @@ def editor_pool(
         operator = session.get(Operator, operator_id)
         if operator_id in excluded_ops:
             counts["same_operator"] += 1
-        elif author_affiliation and vocab.normalise_affiliation(operator.affiliation) == author_affiliation:
+        elif author_affiliation & _affiliation_of(session, operator_id):
             counts["affiliation"] += 1
         elif operator_id in reciprocal:
             counts["reciprocal"] += 1
@@ -443,7 +450,7 @@ def eligible_reviewers(session: Session, manuscript: Manuscript, status: dict) -
         if op not in verdict:
             if op in blocked:
                 verdict[op] = "excluded"
-            elif author_affiliation and _affiliation_of(session, op) == author_affiliation:
+            elif author_affiliation & _affiliation_of(session, op):
                 verdict[op] = "affiliation"
             elif op in reviewed_by_author:
                 verdict[op] = "reciprocal_review"

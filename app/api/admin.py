@@ -137,5 +137,6 @@ def status_endpoint() -> dict:
         "rate_limiting": config.RATE_LIMIT_ENABLED,
         "constitution": constitution.current().as_dict(),
         "startup_problems": config.check_startup(),
+        "warnings": config.warnings(),
         "database": config.DATABASE_URL.split("://", 1)[0],
     }

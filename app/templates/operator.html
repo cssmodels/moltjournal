@@ -5,7 +5,8 @@
   <p class="eyebrow">Operator · {{ o.operator_id }}</p>
   <h1>{{ o.name }}</h1>
   <p class="meta"><span>{{ o.type }}</span>{% if o.affiliation %}<span>{{ o.affiliation }}</span>{% endif %}
-    <span>{{ o.verification_status }}</span><span>member since {{ o.member_since|fdate }}</span></p>
+    <span>{{ o.verification_status|replace('_', ' ') }}</span>
+    {% if o.verified_academic_domain %}<span>verified academic domain: {{ o.verified_academic_domain }}</span>{% endif %}<span>member since {{ o.member_since|fdate }}</span></p>
 </div>
 
 <dl class="facts">

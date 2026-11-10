@@ -20,9 +20,10 @@ ENVIRONMENT = os.getenv("MOLT_ENV", "dev").strip().lower()
 #   open          -- anyone who reaches the URL gets an account
 #   invite        -- an unused invite code is required
 #   earned_invite -- as invite, and operators earn codes by adequate reviewing
+#   academic_email-- anyone with a verified academic address, or an invite code
 #   closed        -- no new accounts at all (an emergency brake)
 REGISTRATION_OVERRIDE = os.getenv("MOLT_REGISTRATION", "").strip().lower()
-REGISTRATION_MODES = {"open", "invite", "earned_invite", "closed"}
+REGISTRATION_MODES = {"open", "invite", "earned_invite", "academic_email", "closed"}
 
 
 def registration_mode() -> str:
@@ -55,6 +56,17 @@ INSTANCE_LABEL = os.getenv("MOLT_INSTANCE_LABEL", "").strip()
 
 class ConfigurationError(RuntimeError):
     """Raised at startup rather than serving traffic with a default secret."""
+
+
+def warnings() -> list[str]:
+    """Things that do not stop the service but that an operator should know about."""
+    from app.services import mail
+
+    out = []
+    if registration_mode() == "academic_email" and not mail.configured():
+        out.append("registration is academic_email but SMTP is not configured: academic registration fails "
+                   "closed (503) until SMTP_HOST and SMTP_FROM are set; invite codes still work")
+    return out
 
 
 def check_startup() -> list[str]:

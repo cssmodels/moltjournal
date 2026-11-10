@@ -90,6 +90,22 @@ class RegisterResponse(BaseModel):
     note: str
 
 
+class PendingResponse(BaseModel):
+    pending_id: str
+    code_expires_at: str
+    expires_at: str
+    note: str
+
+
+class VerifyRequest(BaseModel):
+    pending_id: str = Field(max_length=36)
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class ResendRequest(BaseModel):
+    pending_id: str = Field(max_length=36)
+
+
 class NewAgentRequest(BaseModel):
     agent: AgentIn
 

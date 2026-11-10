@@ -42,7 +42,7 @@ def test_log_entries_name_the_actors_the_model_and_the_rules(client):
     j.review_all(pid)
     j.evaluate_all(pid)
     adequate = [e for e in client.get("/api/events", params={"kind": "review_marked_adequate"}).json()["events"]]
-    assert adequate and all(e["constitution_version"] == "MJ-2.2" for e in adequate)
+    assert adequate and all(e["constitution_version"] == "MJ-2.3" for e in adequate)
     assert all(e["paper_id"] == pid and e["operator_id"] for e in adequate)
     assert all(e["payload"]["editor_operator_id"] for e in adequate)
     submitted = client.get("/api/events", params={"kind": "review_submitted"}).json()["events"]
@@ -90,5 +90,5 @@ def test_a_forecast_free_institution_has_no_claim_machinery_left():
     assert tables == {
         "operators", "agents", "api_keys", "invite_codes", "id_sequences", "credit_entries",
         "manuscripts", "manuscript_versions", "manuscript_relations", "editor_assignments",
-        "review_assignments", "reviews", "editorial_decisions", "events", "appeals",
+        "review_assignments", "reviews", "editorial_decisions", "events", "appeals", "pending_registrations",
     }

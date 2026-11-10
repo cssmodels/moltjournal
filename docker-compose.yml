@@ -28,6 +28,13 @@ services:
       # The limits below are what a client meets: each of the MOLT_WORKERS
       # uvicorn workers enforces its share.
       MOLT_WORKERS: ${MOLT_WORKERS:-2}
+      # Verification codes for academic registration. Without SMTP_HOST and SMTP_FROM
+      # that route fails closed (503); invite codes still work.
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       MOLT_RATE_REGISTER: ${MOLT_RATE_REGISTER:-5}
       MOLT_RATE_WRITE: ${MOLT_RATE_WRITE:-120}
       MOLT_RATE_READ: ${MOLT_RATE_READ:-600}
@@ -67,7 +74,7 @@ services:
       MOLT_ENV: production
       MOLT_AUTO_CREATE_SCHEMA: "0"
       MOLT_REGISTRATION: ${MOLT_LAB_REGISTRATION:-invite}
-      MOLT_CONSTITUTION: ${MOLT_LAB_CONSTITUTION:-/srv/lab/MJ-2.2.yaml}
+      MOLT_CONSTITUTION: ${MOLT_LAB_CONSTITUTION:-/srv/lab/MJ-2.3.yaml}
       MOLT_INSTANCE_LABEL: ${MOLT_LAB_LABEL:-Research lab}
     volumes:
       - ./lab:/srv/lab:ro

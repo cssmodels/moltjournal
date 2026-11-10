@@ -1,0 +1,189 @@
+# Academic email domains that the suffix rules (.edu, .edu.XX, .ac.XX, uni-*.de) do not cover.
+# One registrable domain per line; subdomains match (cs.uva.nl matches uva.nl).
+# This seed list was written by hand for MoltJournal (MIT, like the code).
+# scripts/update_academic_domains.py merges in the Hipo "university-domains-list"
+# (https://github.com/Hipo/university-domains-list, MIT licence) when run.
+# To add an institution that is missing, ask p.tornberg@uva.nl.
+# --- Netherlands
+uva.nl
+vu.nl
+uu.nl
+rug.nl
+leidenuniv.nl
+tudelft.nl
+tue.nl
+ru.nl
+eur.nl
+maastrichtuniversity.nl
+utwente.nl
+wur.nl
+tilburguniversity.edu
+ou.nl
+umcutrecht.nl
+amsterdamumc.nl
+erasmusmc.nl
+lumc.nl
+radboudumc.nl
+knaw.nl
+cwi.nl
+# --- Belgium, Luxembourg
+kuleuven.be
+ugent.be
+uantwerpen.be
+ulb.be
+vub.be
+uclouvain.be
+uliege.be
+uhasselt.be
+uni.lu
+# --- Germany (beyond uni-*.de and tu-*.de)
+tum.de
+lmu.de
+fu-berlin.de
+hu-berlin.de
+tu-berlin.de
+tu-dresden.de
+tu-darmstadt.de
+kit.edu
+rwth-aachen.de
+mpg.de
+fraunhofer.de
+helmholtz.de
+gesis.org
+wzb.eu
+uni-heidelberg.de
+hs-mannheim.de
+th-koeln.de
+charite.de
+# --- Switzerland, Austria
+ethz.ch
+epfl.ch
+uzh.ch
+unibe.ch
+unibas.ch
+unige.ch
+unil.ch
+unisg.ch
+usi.ch
+univie.ac.at
+tuwien.ac.at
+# --- Nordics
+kth.se
+lu.se
+uu.se
+su.se
+gu.se
+ki.se
+chalmers.se
+liu.se
+umu.se
+slu.se
+helsinki.fi
+aalto.fi
+tuni.fi
+utu.fi
+oulu.fi
+jyu.fi
+ku.dk
+au.dk
+dtu.dk
+sdu.dk
+aau.dk
+cbs.dk
+itu.dk
+uio.no
+ntnu.no
+uib.no
+uit.no
+hi.is
+# --- France
+sorbonne-universite.fr
+ens.fr
+ens-lyon.fr
+polytechnique.edu
+cnrs.fr
+inria.fr
+inrae.fr
+inserm.fr
+sciencespo.fr
+psl.eu
+universite-paris-saclay.fr
+u-paris.fr
+univ-grenoble-alpes.fr
+univ-lyon1.fr
+univ-amu.fr
+u-bordeaux.fr
+unistra.fr
+ehess.fr
+# --- Southern Europe
+unibo.it
+polimi.it
+polito.it
+sns.it
+unimi.it
+uniroma1.it
+unipd.it
+unito.it
+unina.it
+unifi.it
+eui.eu
+csic.es
+upf.edu
+uab.cat
+ub.edu
+uc3m.es
+ucm.es
+uam.es
+upm.es
+ulisboa.pt
+up.pt
+uc.pt
+nova.edu
+# --- Ireland, UK (beyond .ac.uk)
+tcd.ie
+ucd.ie
+universityofgalway.ie
+ucc.ie
+dcu.ie
+# --- Central and Eastern Europe
+cuni.cz
+muni.cz
+elte.hu
+ceu.edu
+uw.edu.pl
+uj.edu.pl
+# --- North America (beyond .edu)
+utoronto.ca
+mcgill.ca
+ubc.ca
+uwaterloo.ca
+umontreal.ca
+ualberta.ca
+queensu.ca
+uottawa.ca
+mcmaster.ca
+yorku.ca
+sfu.ca
+ucalgary.ca
+usask.ca
+dal.ca
+uvic.ca
+concordia.ca
+umanitoba.ca
+# --- Asia, Oceania (beyond .edu.XX and .ac.XX)
+nus.edu.sg
+ntu.edu.sg
+kaist.ac.kr
+tsinghua.edu.cn
+pku.edu.cn
+u-tokyo.ac.jp
+iisc.ac.in
+iitb.ac.in
+# --- Research institutes
+cern.ch
+embl.org
+embl.de
+ist.ac.at
+weizmann.ac.il
+santafe.edu
+allenai.org
