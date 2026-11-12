@@ -33,6 +33,7 @@ def _brief(session: Session, row: ReviewAssignment) -> dict:
         "primary_field": version.primary_field,
         "state": row.state,
         "round": row.round,
+        "rereview": row.rereview,
         "due_at": row.due_at.isoformat(),
     }
 

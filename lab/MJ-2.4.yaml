@@ -45,4 +45,4 @@ auto_suspend_hours: 720
 
 registration: academic_email
 invite_per_adequate_reviews: 5
-prompt_version: P-3
+prompt_version: P-4

@@ -1,4 +1,4 @@
-"""MJ-2.3: what an operator asks of its agent, standing preferences, and carrying a paper through."""
+"""MJ-2.4: what an operator asks of its agent, standing preferences, and carrying a paper through."""
 
 import json
 
@@ -97,7 +97,7 @@ def test_an_operator_that_declines_editor_roles_is_never_drawn_as_editor(client)
 
 def test_the_constitution_is_mj_2_2_with_prompts_p_3_and_the_old_prompts_kept(client):
     c = constitution.current()
-    assert c.prompt_version == "P-3"
+    assert c.prompt_version == "P-4"
     for old in ("P-1", "P-2"):
         assert client.get("/api/prompts/reviewer", params={"version": old}).status_code == 200
     entry = next(e for e in client.get("/api/constitution").json()["changelog"] if e["version"] == "MJ-2.2")
@@ -112,3 +112,96 @@ def test_taking_part_lets_an_agent_submit_its_own_research(client):
     assert r.status_code == 201
     assert paper(client, r.json()["paper_id"])["submitted_by"]["operator_id"] == j.reviewers[0].operator_id
     assert json.dumps(tasks(client, j.reviewers[0]))  # the agent's own work queue still serves it
+
+
+# --------------------------------------------------------------------------
+# MJ-2.4: required changes, suggestions, same-panel re-review
+# --------------------------------------------------------------------------
+
+
+def test_a_review_separates_required_changes_from_suggestions(client):
+    from tests.helpers import review_body
+
+    j = Journal(client)
+    pid = j.submit()
+    p, a = j.panel(pid)[0]
+    body = {**review_body(p), "assignment_id": a["assignment_id"], "soundness_recommendation": "major_revision",
+            "major_concerns": [], "minor_concerns": [], "required_changes": [], "suggestions": ["More seeds would help."]}
+    refused = client.post("/api/reviews", json=body, headers=p.headers)
+    assert refused.status_code == 422 and "required change" in refused.text
+    body["required_changes"] = ["The second claim does not follow from Table 2; narrow it to the tested setting."]
+    assert client.post("/api/reviews", json=body, headers=p.headers).status_code == 201
+    review = paper(client, pid, p)["reviews"][0]
+    assert review["required_changes"] == body["required_changes"] and review["suggestions"] == ["More seeds would help."]
+    assert review["major_concerns"] == review["required_changes"], "the old names still work for old clients"
+
+
+def test_old_clients_sending_major_and_minor_concerns_still_work(client):
+    from tests.helpers import do_review
+
+    j = Journal(client)
+    pid = j.submit()
+    p, a = j.panel(pid)[0]
+    r = do_review(client, p, a, recommendation="reject")  # sends major_concerns only
+    assert r.status_code == 201
+    assert paper(client, pid, p)["reviews"][0]["required_changes"]
+
+
+def test_a_major_revision_is_rereviewed_by_the_same_panel_with_the_rereview_prompt(client):
+    j = Journal(client, reviewers=6)
+    pid = j.submit()
+    j.review_all(pid, recommendation="major_revision")
+    j.evaluate_all(pid)
+    first = {r["reviewer"]["operator_id"] for r in paper(client, pid, j.editor_of(pid))["reviews"]}
+    assert j.decide(pid, "major_revision", significance=None).status_code == 201
+    grant(j.author, 5)
+    revised = {**manuscript("Charging for review changes what gets published, with the claim narrowed"),
+               "response_to_reviewers": "We narrowed the second claim to the tested setting, as required."}
+    assert client.post(f"/api/manuscripts/{pid}/revision", json=revised, headers=j.author.headers).status_code == 200
+    seats = j.panel(pid)
+    assert {p.operator_id for p, _ in seats} == first
+    task = next(t for t in tasks(client, seats[0][0]) if t["type"] == "review")
+    assert task["rereview"] and "# Re-reviewer" in task["instructions"]
+    assert task["untrusted_content"]["your_previous_review"]["required_changes"]
+
+
+def test_an_unavailable_original_reviewer_is_replaced_by_the_usual_draw(client):
+    j = Journal(client, reviewers=6)
+    pid = j.submit()
+    j.review_all(pid, recommendation="major_revision")
+    j.evaluate_all(pid)
+    first = [j.by_operator(r["reviewer"]["operator_id"]) for r in paper(client, pid, j.editor_of(pid))["reviews"]]
+    j.decide(pid, "major_revision", significance=None)
+    client.patch("/api/profile", json={"available": False}, headers=first[0].headers)
+    grant(j.author, 5)
+    revised = {**manuscript("Charging for review changes what gets published, revised again"),
+               "response_to_reviewers": "We addressed each required change in turn, as set out below."}
+    client.post(f"/api/manuscripts/{pid}/revision", json=revised, headers=j.author.headers)
+    seats = {p.operator_id for p, _ in j.panel(pid)}
+    assert len(seats) == 3 and first[0].operator_id not in seats
+    assert {p.operator_id for p in first[1:]} <= seats
+    assert events(client, "rereview_skipped")
+
+
+def test_the_p4_prompts_set_a_permissive_bar(client):
+    reviewer = client.get("/api/prompts/reviewer").text
+    for must in ("central claims follow from its evidence as stated", "never grounds for revision",
+                 "narrow the claim", "fundamentally unsound"):
+        assert must in reviewer, must
+    rereviewer = client.get("/api/prompts/rereviewer").text
+    assert "only for a real error that the revision introduced" in rereviewer
+    editor = client.get("/api/prompts/editor").text
+    assert "Suggestions never decide anything" in editor and "same reviewers" in editor
+    author = client.get("/api/prompts/author_revision").text
+    assert "Suggestions are optional" in author
+    for old in ("P-1", "P-2", "P-3"):
+        assert client.get("/api/prompts/reviewer", params={"version": old}).status_code == 200
+
+
+def test_statistics_show_how_demanding_reviewers_are(client):
+    j = Journal(client)
+    j.publish()
+    s = client.get("/api/statistics").json()["review_demands"]
+    assert s["share_with_no_required_changes"] is not None and s["by_reviewer"]
+    assert s["decisions_to_final_median"] == 1 and s["decisions_to_final"] == {"1": 1} or s["decisions_to_final"] == {1: 1}
+    assert "How demanding reviewers are" in client.get("/statistics").text

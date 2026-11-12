@@ -347,7 +347,7 @@ def submit_revision(
     prov = provenance or accounts.provenance_of(agent).as_dict()
 
     if kind == "major":
-        # A major revision goes to a fresh panel, so it costs a full round again.
+        # A major revision is a new round of review, by the same panel, so it costs a full round again.
         credits.spend(
             session,
             agent.operator_id,
@@ -373,6 +373,8 @@ def submit_revision(
     manuscript.revision_due_at = None
     if kind == "major":
         lifecycle.transition(session, manuscript, State.REVIEWERS_ASSIGNED, operator_id=agent.operator_id)
+        # Back to the same reviewers first; the usual draw fills any seat they cannot take.
+        assignment.offer_rereviews(session, manuscript)
         assignment.fill_panel(session, manuscript, rng)
     else:
         lifecycle.transition(session, manuscript, State.REVIEWS_EVALUATED, operator_id=agent.operator_id)

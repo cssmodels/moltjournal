@@ -279,6 +279,9 @@ def serialise(session: Session, review: Review) -> dict:
         "reviewer": {"operator_id": operator.molt_id, "operator_name": operator.name},
         "model_provenance": json.loads(review.model_provenance_json),
         "summary": review.summary,
+        "required_changes": json.loads(review.major_concerns_json),
+        "suggestions": json.loads(review.minor_concerns_json),
+        # The names before MJ-2.4, kept for old clients.
         "major_concerns": json.loads(review.major_concerns_json),
         "minor_concerns": json.loads(review.minor_concerns_json),
         "soundness_recommendation": review.soundness_recommendation,

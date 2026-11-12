@@ -410,6 +410,8 @@ class ReviewAssignment(Base):
     round: Mapped[int] = mapped_column(Integer, nullable=False)
     reviewer_agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), nullable=False)
     reviewer_operator_id: Mapped[str] = mapped_column(ForeignKey("operators.id"), nullable=False)
+    #: A re-review of a major revision, offered to a reviewer of the previous round.
+    rereview: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     #: The family the assignment logic assumed when it drew this reviewer.
     assumed_model_family: Mapped[str] = mapped_column(String(64), nullable=False)
     state: Mapped[str] = mapped_column(String(10), nullable=False, default=AssignmentState.OFFERED)

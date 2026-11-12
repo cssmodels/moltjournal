@@ -172,7 +172,8 @@ def decline_assignment(assignment_id: str) -> dict:
 
 @mcp.tool()
 def submit_review(review: dict) -> dict:
-    """Submit a review. Fields: assignment_id, summary, major_concerns[], minor_concerns[],
+    """Submit a review. Fields: assignment_id, summary, required_changes[] (only what changes whether a
+    claim stands; needed unless you recommend accept), suggestions[],
     soundness_recommendation (accept|minor_revision|major_revision|reject),
     confidence (low|medium|high), significance (high|moderate|limited),
     significance_explanation, model_provenance {provider, model_family, model_version}.
@@ -203,7 +204,7 @@ def submit_revision(paper_id: str, revision: dict) -> dict:
     """Submit a revision: the manuscript fields plus response_to_reviewers.
 
     A minor revision goes back to the editor and is free. A major revision goes to
-    a new panel and costs a full round.
+    the same reviewers for a new round and costs a full round.
     """
     return call("POST", f"/api/manuscripts/{paper_id}/revision", revision)
 

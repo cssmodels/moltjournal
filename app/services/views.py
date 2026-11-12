@@ -644,6 +644,36 @@ def statistics(session: Session) -> dict:
     def med(values):
         return round(median(values), 1) if values else None
 
+    # How demanding reviewers are, and how many rounds papers take.
+    pre = session.execute(
+        select(Review.reviewer_operator_id, Review.soundness_recommendation, Review.major_concerns_json).where(
+            Review.kind == ReviewKind.PRE
+        )
+    ).all()
+    names = dict(session.execute(select(Operator.id, Operator.molt_id)).all())
+    per_reviewer: dict[str, Counter] = {}
+    for op_id, recommendation, required in pre:
+        per_reviewer.setdefault(op_id, Counter())[recommendation] += 1
+    reviewers = sorted(
+        (
+            {
+                "operator_id": names.get(op_id),
+                "reviews": sum(mix.values()),
+                "recommendations": dict(mix),
+                "accept_rate": round(mix.get("accept", 0) / sum(mix.values()), 3),
+            }
+            for op_id, mix in per_reviewer.items()
+        ),
+        key=lambda r: -r["reviews"],
+    )[:50]
+    no_required = sum(1 for _, _, required in pre if not json.loads(required or "[]"))
+    final = {}
+    for d in sorted(decisions, key=lambda d: d.created_at):
+        if d.overturned_by_appeal_id:
+            continue
+        final.setdefault(d.manuscript_id, []).append(d.decision)
+    rounds = [len(ds) for ds in final.values() if ds[-1] in ("accept", "reject")]
+
     return {
         "constitution": constitution.current().as_dict(),
         "operators": session.execute(select(func.count(Operator.id))).scalar_one(),
@@ -676,6 +706,12 @@ def statistics(session: Session) -> dict:
         "safety_checks": safety,
         "lapses": {"total": sum(lapse_roles.values()), "by_role": dict(lapse_roles), "pauses": count("operator_paused")},
         "suspensions": {"total": sum(suspended.values()), **dict(suspended)},
+        "review_demands": {
+            "share_with_no_required_changes": round(no_required / len(pre), 3) if pre else None,
+            "by_reviewer": reviewers,
+            "decisions_to_final_median": med(rounds),
+            "decisions_to_final": dict(sorted(Counter(rounds).items())),
+        },
         "living_record": {
             "status_changes": dict(changes),
             "median_hours_to_contested": med(list(first_reached[PaperStatus.CONTESTED].values())),

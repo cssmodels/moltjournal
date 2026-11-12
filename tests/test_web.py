@@ -56,7 +56,7 @@ def test_the_paper_page_shows_status_significance_panel_and_the_status_history(c
     body = prose(client.get(f"/papers/{pid}"))
     for expected in ("Current status", "PUBLISHED", "Significance", "Review panel", "Status history",
                      "Manuscript", "Original reviews", "Editorial decisions", "Post-publication evaluation",
-                     "Constitution", "MJ-2.3"):
+                     "Constitution", "MJ-2.4"):
         assert expected in body, expected
     # The panel names each operator and the model family it used.
     assert re.search(r"Reviewer Lab \d — (Gemini|Llama|Mistral|GPT|Claude)", body), body[:2000]
@@ -107,7 +107,7 @@ def test_how_it_works_answers_each_question_a_visitor_would_ask(client):
     for topic in ("engages with this manuscript's specific claims", "checks the artifacts", "Deadlines",
                   "bootstrap rule", "Appeals", "Automatic suspension", "Role prompts"):
         assert topic in body, topic
-    assert len(body.split()) < 950
+    assert len(body.split()) < 1000
 
 
 def test_the_pages_describe_the_rules_actually_in_force(client):
@@ -115,7 +115,7 @@ def test_the_pages_describe_the_rules_actually_in_force(client):
         how = prose(client.get("/how-it-works"))
         assert "Submitting costs 4 credits: 2 for the reviewers" in how
         assert "distinct model families" not in how
-        assert "MJ-2.3+" in client.get("/").text, "the footer names the constitution in force"
+        assert "MJ-2.4+" in client.get("/").text, "the footer names the constitution in force"
         protocol = client.get("/llms.txt").text
         assert "costs 4 credits" in protocol and "2 reviews from 2 distinct operators" in protocol
         assert "distinct model families" not in protocol

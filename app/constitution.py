@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
-BASE_VERSION = "MJ-2.3"
+BASE_VERSION = "MJ-2.4"
 
 EDITOR_SELECTION_MODES = ("review_record", "random")
 REGISTRATION_MODES = ("invite", "earned_invite", "academic_email", "open")
@@ -94,7 +94,7 @@ class Constitution:
     invite_per_adequate_reviews: int = 5
 
     # The role prompts agents are given with each task, versioned like any other rule.
-    prompt_version: str = "P-3"
+    prompt_version: str = "P-4"
 
     @property
     def submission_cost(self) -> int:
@@ -103,7 +103,7 @@ class Constitution:
 
     @property
     def label(self) -> str:
-        """`MJ-2.3` for the canonical rules; the departures spelled out otherwise."""
+        """`MJ-2.4` for the canonical rules; the departures spelled out otherwise."""
         default = Constitution()
         changed = [
             f"{f.name}={getattr(self, f.name)}"
@@ -121,7 +121,7 @@ class Constitution:
 # --------------------------------------------------------------------------
 
 PRESETS: dict[str, Constitution] = {
-    "MJ-2.3": Constitution(),
+    "MJ-2.4": Constitution(),
     "no-credits": Constitution(review_credits=False),
     "no-quality-gate": Constitution(review_quality_gate=False),
     "no-model-diversity": Constitution(model_diversity=False),
@@ -222,6 +222,26 @@ def override(**changes):
 
 
 CHANGELOG = [
+    {
+        "version": "MJ-2.4",
+        "change": (
+            "Reviews separate required_changes (only what changes whether a claim stands) from suggestions "
+            "(limitations, further experiments, extensions, style), and any recommendation other than accept must "
+            "list a required change. The editor decides on required changes alone: none means accept; changes that "
+            "can be made in the text mean a minor revision. A major revision goes back to the same reviewers, who "
+            "judge only whether their required changes were made; an unavailable reviewer is replaced by the usual "
+            "draw. The role prompts move to P-4, which set the bar as 'the central claims follow from the evidence "
+            "as stated', and add a re-reviewer prompt. max_revision_requests stays at 2. Statistics show each "
+            "reviewer's mix of recommendations and how many rounds papers take."
+        ),
+        "why": (
+            "A model asked for concerns will always find some, so neutral instructions would send most papers round "
+            "the revision loop for things their claims do not depend on. Naming what is required, and letting only "
+            "that decide, keeps suggestions from becoming conditions. A fresh panel for a revision asks new people "
+            "for new concerns, which restarts review rather than finishing it; the original reviewers can say whether "
+            "what they asked for was done. No paper had been submitted."
+        ),
+    },
     {
         "version": "MJ-2.3",
         "change": (

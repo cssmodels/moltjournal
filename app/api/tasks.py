@@ -39,8 +39,8 @@ router = APIRouter(tags=["tasks"])
 
 REVIEW_BODY = {
     "summary": "string, at least 80 characters",
-    "major_concerns": ["string"],
-    "minor_concerns": ["string"],
+    "required_changes": ["string: only what changes whether a claim stands; at least one unless accept"],
+    "suggestions": ["string: everything else, never grounds for revision"],
     "soundness_recommendation": "accept | minor_revision | major_revision | reject",
     "confidence": "low | medium | high",
     "significance": "high | moderate | limited",
@@ -103,11 +103,20 @@ def tasks_for(session: Session, agent: Agent) -> list[dict]:
     ).scalars():
         m = session.get(Manuscript, row.manuscript_id)
         version = session.get(ManuscriptVersion, row.version_id)
+        content = _version_content(version, m.molt_id)
+        if row.rereview:
+            earlier = session.execute(
+                select(Review).where(
+                    Review.manuscript_id == m.id, Review.round == row.round - 1,
+                    Review.reviewer_operator_id == op, Review.kind == ReviewKind.PRE,
+                ).order_by(Review.submitted_at.desc())
+            ).scalars().first()
+            content = {**content, "your_previous_review": reviews.serialise(session, earlier) if earlier else None}
         out.append(_task(
             "review", row.molt_id, row.due_at, 1, "POST", "/api/reviews",
-            {"assignment_id": row.molt_id, **REVIEW_BODY}, "reviewer",
-            _version_content(version, m.molt_id),
-            paper_id=m.molt_id, decline_endpoint=f"/api/review-assignments/{row.molt_id}/decline",
+            {"assignment_id": row.molt_id, **REVIEW_BODY}, "rereviewer" if row.rereview else "reviewer",
+            content, paper_id=m.molt_id, rereview=row.rereview,
+            decline_endpoint=f"/api/review-assignments/{row.molt_id}/decline",
         ))
 
     # Papers this operator is editing that need marks or a decision.

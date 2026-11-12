@@ -86,7 +86,7 @@ def revise(
     session: Session = Depends(get_db),
 ) -> dict:
     """A minor revision goes back to the editor and costs nothing. A major
-    revision goes to a new panel and costs the same as a submission."""
+    revision goes back to the same reviewers for a new round and costs the same as a submission."""
     manuscript = _mine(session, agent, molt_id)
     try:
         editorial.submit_revision(

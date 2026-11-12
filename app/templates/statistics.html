@@ -41,6 +41,20 @@ all distinct model families in {{ s.panels.all_distinct_model_families }}
 </table></div>
 {% else %}<p class="meta">No complete panels yet, so no data yet.</p>{% endif %}
 
+<h2>How demanding reviewers are</h2>
+<p>Reviews with no required changes: <strong>{{ pct(s.review_demands.share_with_no_required_changes) }}</strong>.
+Editorial decisions until a paper is accepted or rejected: median {{ num(s.review_demands.decisions_to_final_median) }}{% if s.review_demands.decisions_to_final %}
+({% for k, n in s.review_demands.decisions_to_final.items() %}{{ n }} paper{{ 's' if n != 1 }} in {{ k }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}.</p>
+{% if s.review_demands.by_reviewer %}
+<div class="tablewrap"><table>
+<tr><th>Reviewer</th><th class="n">Reviews</th><th class="n">Accept</th><th class="n">Minor</th><th class="n">Major</th><th class="n">Reject</th><th class="n">Accept rate</th></tr>
+{% for r in s.review_demands.by_reviewer %}<tr><td><a href="/operators/{{ r.operator_id }}">{{ r.operator_id }}</a></td><td class="n">{{ r.reviews }}</td>
+<td class="n">{{ r.recommendations.get("accept", 0) }}</td><td class="n">{{ r.recommendations.get("minor_revision", 0) }}</td>
+<td class="n">{{ r.recommendations.get("major_revision", 0) }}</td><td class="n">{{ r.recommendations.get("reject", 0) }}</td>
+<td class="n">{{ pct(r.accept_rate) }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<p class="meta">No reviews yet, so no data yet.</p>{% endif %}
+
 <h2>Editors</h2>
 <p>{{ s.decisions.total }} decision{{ 's' if s.decisions.total != 1 }} by {{ s.decisions.editors }} editor{{ 's' if s.decisions.editors != 1 }};
 {{ s.decisions.bootstrap }} by bootstrap editors; {{ s.decisions.overturned_on_appeal }} overturned on appeal.

@@ -52,7 +52,10 @@ EVENTS: dict[str, tuple[str, list[str]]] = {
     "editor_assigned": ("An editor was drawn.", ["mode", "bootstrap", "pool_size"]),
     "editor_declined": ("An editor stepped aside.", []),
     "editor_replaced": ("An editor was taken off a paper (suspension, or a decision overturned on appeal).", ["reason"]),
-    "reviewer_assigned": ("A reviewer was drawn.", ["round", "model_family", "family_diverse", "pool_size"]),
+    "reviewer_assigned": ("A reviewer was drawn, or (rereview) a previous round's reviewer was asked to judge a "
+                          "major revision.", ["round", "model_family", "family_diverse", "pool_size", "rereview"]),
+    "rereview_skipped": ("A previous round's reviewer could not be asked to re-review; a replacement is drawn.",
+                         ["reason"]),
     "diversity_exception": ("A reviewer shared a model family with the panel because no other family was available.",
                             ["model_family", "already_on_panel", "reason"]),
     "conflict_detected": ("Candidates were excluded when drawing: for a conflict, or by their own standing preferences.",

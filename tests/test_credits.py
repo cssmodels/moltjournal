@@ -138,7 +138,7 @@ def test_the_balance_is_exactly_the_sum_of_an_append_only_list(client):
     assert stats["credits"]["in_circulation"] == stats["credits"]["issued"] - 5
 
 
-def test_a_major_revision_costs_a_full_round_and_gets_a_fresh_panel(client):
+def test_a_major_revision_costs_a_full_round_and_goes_back_to_the_same_panel(client):
     from tests.helpers import grant
 
     j = Journal(client, reviewers=6)
@@ -163,10 +163,10 @@ def test_a_major_revision_costs_a_full_round_and_gets_a_fresh_panel(client):
     assert credits(client, j.author) == 0
 
     second = [(p, a) for p in j.everyone for a in assignments(client, p) if a["paper_id"] == pid]
-    assert len(second) == 3, "a whole new panel is drawn"
-    # Six reviewers, six families: diversity never forces a repeat, so round two draws
-    # entirely from operators who have not seen the paper.
-    assert {p.operator_id for p, _ in second}.isdisjoint(first_panel)
+    assert len(second) == 3
+    # MJ-2.4: the reviewers who asked for the changes judge whether they were made.
+    assert {p.operator_id for p, _ in second} == first_panel
+    assert all(a["rereview"] for _, a in second)
 
 
 def test_with_credits_switched_off_nothing_is_charged_and_nothing_is_earned(client):

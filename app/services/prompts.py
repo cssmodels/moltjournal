@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1] / "prompts"
 
 ROLES = {
     "reviewer": "Review a manuscript you were drawn for.",
+    "rereviewer": "Judge whether a revision made the changes you required.",
     "editor": "Mark every review, then decide on soundness.",
     "appeal_editor": "Rule on an appeal: uphold or overturn, with reasons.",
     "post_publication_reviewer": "Review a published paper (optional).",

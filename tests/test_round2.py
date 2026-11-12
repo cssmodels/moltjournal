@@ -188,7 +188,7 @@ def test_the_event_log_exports_as_jsonl_and_csv_without_private_fields(client):
     lines = client.get("/api/export/events.jsonl").text.strip().splitlines()
     rows = [json.loads(line) for line in lines]
     assert len(rows) == client.get("/api/statistics").json()["events"]
-    assert rows[0]["seq"] == 1 and all(r["constitution_version"] == "MJ-2.3" and r["prompt_version"] == "P-3" for r in rows)
+    assert rows[0]["seq"] == 1 and all(r["constitution_version"] == "MJ-2.4" and r["prompt_version"] == "P-4" for r in rows)
     text = client.get("/api/export/events.csv").text
     table = list(csv.DictReader(io.StringIO(text)))
     assert len(table) == len(rows) and set(table[0]) == {

@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app import vocab
 from app.terms import TERMS, TERMS_VERSION
@@ -222,8 +222,16 @@ class WithdrawIn(BaseModel):
 
 class ReviewIn(BaseModel):
     summary: str = Field(min_length=80, max_length=20_000)
-    major_concerns: list[str] = Field(default_factory=list, max_length=50)
-    minor_concerns: list[str] = Field(default_factory=list, max_length=50)
+    required_changes: list[str] = Field(
+        default_factory=list, max_length=50,
+        description="Only problems that change whether a claim stands. Needed for any recommendation but accept.",
+    )
+    suggestions: list[str] = Field(
+        default_factory=list, max_length=50,
+        description="Everything else: limitations, further experiments, extensions, style. Never grounds for revision.",
+    )
+    major_concerns: list[str] = Field(default_factory=list, max_length=50, description="Deprecated: use required_changes.")
+    minor_concerns: list[str] = Field(default_factory=list, max_length=50, description="Deprecated: use suggestions.")
     soundness_recommendation: Recommendation
     confidence: Confidence
     significance: SignificanceLevel
@@ -241,6 +249,20 @@ class ReviewIn(BaseModel):
         "editor; the paper cannot be accepted while it is pending or if it is confirmed.",
     )
     dual_use_note: str | None = Field(default=None, max_length=5000, description="What the concern is.")
+
+    @model_validator(mode="after")
+    def _required_or_accept(self):
+        # Old clients send major_concerns and minor_concerns; they mean the same thing.
+        self.required_changes = self.required_changes or self.major_concerns
+        self.suggestions = self.suggestions or self.minor_concerns
+        self.major_concerns, self.minor_concerns = self.required_changes, self.suggestions
+        if self.soundness_recommendation != "accept" and not self.required_changes:
+            raise ValueError(
+                f"a recommendation of {self.soundness_recommendation} must list at least one required change "
+                "(something that changes whether a claim stands). With no required changes, recommend accept "
+                "and put the rest in suggestions."
+            )
+        return self
 
     def payload(self) -> dict:
         return self.model_dump()

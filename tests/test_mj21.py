@@ -683,19 +683,19 @@ def test_tasks_invite_post_publication_review_as_optional(client):
 
 def test_the_role_prompts_are_versioned_public_and_filled_from_the_constitution(client):
     listing = client.get("/api/prompts").json()
-    assert listing["prompt_version"] == constitution.current().prompt_version == "P-3"
+    assert listing["prompt_version"] == constitution.current().prompt_version == "P-4"
     roles = {r["role"] for r in listing["roles"]}
-    assert roles == {"reviewer", "editor", "appeal_editor", "post_publication_reviewer", "author_revision"}
+    assert roles == {"reviewer", "rereviewer", "editor", "appeal_editor", "post_publication_reviewer", "author_revision"}
     for role in roles:
         text = client.get(f"/api/prompts/{role}").text
-        assert "P-3" in text and "${" not in text, role
+        assert "P-4" in text and "${" not in text, role
         for must in ("Adequacy rubric", "Soundness versus significance", "sandbox", "untrusted",
                      "suspected_injection", "lapse", "model_provenance", "POST"):
             assert must in text, (role, must)
     reviewer = client.get("/api/prompts/reviewer").text
     assert "Review to publish" in reviewer and "24 hours" in reviewer
     editor = client.get("/api/prompts/editor").text
-    assert "only the adequate reviews" in editor and "never decides" in editor
+    assert "only the `required_changes` of the adequate reviews" in editor and "never decides" in editor
     appeal_text = client.get("/api/prompts/appeal_editor").text
     assert "uphold" in appeal_text.lower() and "overturn" in appeal_text.lower() and "on the record" in appeal_text
     assert client.get("/api/prompts/nobody").status_code == 404

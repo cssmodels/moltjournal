@@ -481,6 +481,66 @@ def _prior_reviewer_operators(session: Session, manuscript: Manuscript) -> set[s
     )
 
 
+def offer_rereviews(session: Session, manuscript: Manuscript) -> list[ReviewAssignment]:
+    """A major revision goes back to the reviewers whose adequate reviews decided the last round.
+
+    The conflict and preference rules that govern a first draw do not apply: these reviewers
+    already hold the paper, and only they can say whether what they required was done. A
+    suspended or unavailable reviewer is skipped, and `fill_panel` draws a replacement.
+    """
+    from app.services import suspension
+
+    c = constitution.current()
+    previous = manuscript.round - 1
+    rows = session.execute(
+        select(Review)
+        .where(
+            Review.manuscript_id == manuscript.id,
+            Review.round == previous,
+            Review.kind == "pre",
+            Review.evaluation == Evaluation.ADEQUATE,
+        )
+        .order_by(Review.submitted_at)
+    ).scalars().all()
+    version = latest_version(session, manuscript)
+    due = utcnow() + timedelta(hours=c.reviewer_deadline_hours)
+    created: list[ReviewAssignment] = []
+    for review in rows[: manuscript.reviews_required]:
+        operator = session.get(Operator, review.reviewer_operator_id)
+        agent = session.get(Agent, review.reviewer_agent_id)
+        if suspension.is_suspended(operator) or agent.suspended_at is not None or not agent.available:
+            events.log(session, "rereview_skipped", manuscript_id=manuscript.id, operator_id=operator.id,
+                       reason="reviewer unavailable")
+            continue
+        assignment = ReviewAssignment(
+            molt_id=ids.review_assignment_id(session),
+            manuscript_id=manuscript.id,
+            version_id=version.id,
+            round=manuscript.round,
+            reviewer_agent_id=agent.id,
+            reviewer_operator_id=operator.id,
+            assumed_model_family=agent.model_family,
+            rereview=True,
+            due_at=due,
+        )
+        session.add(assignment)
+        session.flush()
+        events.log(
+            session,
+            "reviewer_assigned",
+            manuscript_id=manuscript.id,
+            operator_id=operator.id,
+            agent_id=agent.id,
+            subject_id=assignment.id,
+            round=manuscript.round,
+            model_family=agent.model_family,
+            rereview=True,
+        )
+        notify.queue(session, operator.id, "review", assignment.molt_id, due)
+        created.append(assignment)
+    return created
+
+
 def fill_panel(
     session: Session, manuscript: Manuscript, rng: random.Random | None = None
 ) -> list[ReviewAssignment]:
